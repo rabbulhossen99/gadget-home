@@ -1,0 +1,147 @@
+export type Variant = {
+  id: string;
+  name: string;
+  sku: string;
+  price: number;
+  compareAt: number | null;
+  stock: number;
+  units: number;
+  active: boolean;
+};
+export type Product = {
+  id: string;
+  version: number;
+  name: string;
+  slug: string;
+  categoryId: string;
+  description: string;
+  detail: string;
+  usage: string;
+  attributes: { name: string; value: string }[];
+  images: string[];
+  status: "active" | "draft" | "archived";
+  featured: boolean;
+  variants: Variant[];
+  targeting?: Record<string, string>;
+};
+export type Category = {
+  id: string;
+  version: number;
+  name: string;
+  slug: string;
+  parentId: string | null;
+  image: string;
+  homepage: boolean;
+  active: boolean;
+  position: number;
+};
+export type Section = {
+  id: string;
+  version: number;
+  type: "hero" | "products" | "categories" | "packages" | "combo" | "promotion";
+  title: string;
+  subtitle: string;
+  image: string;
+  link: string;
+  buttonText: string;
+  productIds: string[];
+  categoryIds: string[];
+  active: boolean;
+  position: number;
+};
+export type Combo = {
+  id: string;
+  version: number;
+  name: string;
+  description: string;
+  productIds: string[];
+  tiers: { count: number; price: number }[];
+  active: boolean;
+};
+export type Settings = {
+  id: string;
+  version: number;
+  name: string;
+  supportEmail: string;
+  phone: string;
+  address: string;
+  announcement: string;
+  footer: string;
+  currency: "BDT";
+  shippingInside: number;
+  shippingOutside: number;
+  freeShippingThreshold: number | null;
+  codEnabled: boolean;
+  manualEnabled: boolean;
+  manualInstructions: string;
+  privacyPolicy: string;
+  returnPolicy: string;
+  deliveryPolicy: string;
+  checkoutConsent: string;
+  lowStockThreshold: number;
+  abandonedRetentionDays: number;
+  cookieBanner: boolean;
+};
+export type Catalog = {
+  products: Product[];
+  categories: Category[];
+  sections: Section[];
+  combos: Combo[];
+  settings: Settings;
+};
+export type CartItem =
+  | { type: "product"; productId: string; variantId: string; quantity: number }
+  | { type: "combo"; comboId: string; productIds: string[]; quantity: number };
+export type QuoteLine = {
+  type: "product" | "combo";
+  name: string;
+  variant: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+  image: string;
+  productId?: string;
+  variantId?: string;
+  components?: QuoteLine[];
+};
+export type Quote = {
+  lines: QuoteLine[];
+  subtotal: number;
+  shipping: number;
+  discount: number;
+  total: number;
+  currency: string;
+};
+export type User = {
+  id: string;
+  name: string;
+  email: string;
+  role: "customer" | "admin";
+};
+export type Order = Quote & {
+  id: string;
+  number: string;
+  version: number;
+  status: string;
+  createdAt: string;
+  name: string;
+  phone: string;
+  email: string;
+  address: string;
+  area: string;
+  note: string;
+  paymentMethod: string;
+  paymentReference: string;
+  paymentStatus: string;
+  carrier: string;
+  trackingNumber: string;
+  shippingNote: string;
+  trackingToken?: string;
+  events: {
+    status: string;
+    message: string;
+    createdAt: string;
+    carrier?: string;
+    trackingNumber?: string;
+  }[];
+};
