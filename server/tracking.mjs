@@ -1,0 +1,24 @@
+import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { z } from "zod";
+import { id, audit } from "./db.mjs";
+
+const schema = z.object({
+  pixelId: z.string().trim().max(100).default(""), testCode: z.string().trim().max(200).default(""),
+  accessToken: z.string().max(5000).default(""), tiktokPixelId: z.string().trim().max(100).default(""),
+  googleMeasurementId: z.string().trim().max(100).default(""),
+  advancedMatching: z.boolean().default(false), serverSide: z.boolean().default(true),
+  cookieConsent: z.boolean().default(true), dynamicProducts: z.boolean().default(true), offlineUpload: z.boolean().default(false),
+}).strict();
+const key = () => { const raw = process.env.TRACKING_ENCRYPTION_KEY || process.env.COURIER_ENCRYPTION_KEY || ""; if (!/^[a-f0-9]{64}$/i.test(raw)) throw Object.assign(new Error("Configure a 64-character hex TRACKING_ENCRYPTION_KEY."), { status: 503 }); return Buffer.from(raw, "hex"); };
+const encrypt = value => { const iv = randomBytes(12), c = createCipheriv("aes-256-gcm", key(), iv); const data = c.update(JSON.stringify(value), "utf8", "hex") + c.final("hex"); return `${iv.toString("hex")}.${data}.${c.getAuthTag().toString("hex")}`; };
+const decrypt = value => { const [iv,data,tag] = value.split("."), d = createDecipheriv("aes-256-gcm", key(), Buffer.from(iv,"hex")); d.setAuthTag(Buffer.from(tag,"hex")); return JSON.parse(d.update(data,"hex","utf8") + d.final("utf8")); };
+export function installTracking(db) { db.exec("CREATE TABLE IF NOT EXISTS tracking_settings (id TEXT PRIMARY KEY, encrypted TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP); CREATE TABLE IF NOT EXISTS tracking_events (id TEXT PRIMARY KEY, event_name TEXT NOT NULL, event_id TEXT NOT NULL, status TEXT NOT NULL, response TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP); CREATE INDEX IF NOT EXISTS tracking_events_date ON tracking_events(created_at)"); }
+export function trackingService(db) {
+  installTracking(db);
+  const read = () => { const row = db.prepare("SELECT encrypted FROM tracking_settings WHERE id='store'").get(); return row ? decrypt(row.encrypted) : schema.parse({}); };
+  const safe = value => ({ ...value, accessToken: "", configured: !!value.accessToken });
+  const save = (input, actor) => { const previous = read(), next = schema.parse({ ...previous, ...input, accessToken: input.accessToken || previous.accessToken }); db.prepare("INSERT INTO tracking_settings(id,encrypted) VALUES('store',?) ON CONFLICT(id) DO UPDATE SET encrypted=excluded.encrypted,updated_at=CURRENT_TIMESTAMP").run(encrypt(next)); audit(db, actor, "tracking.update", "store"); return safe(next); };
+  async function test(input, actor) { const settings = read(), pixelId = input.pixelId || settings.pixelId, token = settings.accessToken; if (!/^\d{5,30}$/.test(pixelId) || !token) throw Object.assign(new Error("Save a valid Meta Pixel ID and access token first."), { status: 400 }); const eventId = `test_${id()}`, body = { data: [{ event_name: input.eventName || "PageView", event_time: Math.floor(Date.now()/1000), event_id: eventId, action_source: "website", user_data: {}, custom_data: { currency: input.currency || "BDT", value: Number(input.value || 0) } }], ...(settings.testCode ? { test_event_code: settings.testCode } : {}) }; let response, data; try { response = await fetch(`https://graph.facebook.com/v20.0/${encodeURIComponent(pixelId)}/events`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(body), signal: AbortSignal.timeout(15000) }); data = await response.json(); } catch { throw Object.assign(new Error("Meta Graph API timed out or could not be reached."), { status: 502 }); } const ok = response.ok && !data.error; db.prepare("INSERT INTO tracking_events VALUES(?,?,?,?,?,CURRENT_TIMESTAMP)").run(id(), body.data[0].event_name, eventId, ok ? "delivered" : "failed", JSON.stringify(ok ? { events_received: data.events_received } : { code: data.error?.code, message: data.error?.message })); if (!ok) throw Object.assign(new Error(data.error?.message || "Meta rejected the event."), { status: 502 }); audit(db, actor, "tracking.test", eventId); return { ok: true, pixelId, eventName: body.data[0].event_name, eventId, response: "Event Received Successfully", apiStatus: `${response.status} OK` }; }
+  return { read: () => safe(read()), save, test, events: () => db.prepare("SELECT created_at,event_name,event_id,status,response FROM tracking_events ORDER BY rowid DESC LIMIT 50").all() };
+}
+export function mountTracking(app, service) { app.get("/api/admin/tracking", (_,res) => res.json({ settings: service.read(), events: service.events() })); app.put("/api/admin/tracking", (req,res) => res.json({ settings: service.save(req.body, req.user.id) })); app.post("/api/admin/tracking/test", async (req,res) => res.json(await service.test(req.body || {}, req.user.id))); }

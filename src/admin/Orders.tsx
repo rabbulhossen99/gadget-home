@@ -1,3 +1,4 @@
+import { OrderCourier } from "./OrderCourier";
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useResource, useStore } from "@/lib/store";
@@ -7,14 +8,16 @@ import { Button } from "@/components/ui/button";
 import { Field, ErrorBox, Empty } from "@/components/shared";
 import { OrderDetails } from "@/pages/Checkout";
 const transitions: Record<string, string[]> = {
-  pending: ["confirmed", "cancelled"],
-  confirmed: ["processing", "cancelled"],
-  processing: ["shipped", "cancelled"],
-  shipped: ["delivered", "returned"],
-  delivered: ["returned"],
-  cancelled: [],
-  returned: [],
+  pending: ["processing", "on-hold", "cancelled", "pending-payment"],
+  processing: ["on-hold", "completed", "cancelled"],
+  "on-hold": ["pending", "processing", "cancelled"],
+  "pending-payment": ["pending", "processing", "on-hold", "cancelled"],
+  completed: ["refunded"],
+  refunded: [],
+  cancelled: ["pending"],
 };
+const statusLabels: Record<string, string> = { "on-hold": "On Hold", "pending-payment": "Pending Payment" };
+const label = (s: string) => statusLabels[s] || s.replace(/^./, (c) => c.toUpperCase());
 export function Orders() {
   const [params, setParams] = useSearchParams();
   const query = params.get("q") || "";
@@ -52,7 +55,6 @@ export function Orders() {
                   "Customer",
                   "Phone",
                   "Status",
-                  "Payment",
                   "Total BDT",
                 ],
                 ...orders.map((o) => [
@@ -61,7 +63,6 @@ export function Orders() {
                   o.name,
                   o.phone,
                   o.status,
-                  o.paymentStatus,
                   o.total / 100,
                 ]),
               ]),
@@ -101,7 +102,7 @@ export function Orders() {
             >
               <option value="">All statuses</option>
               {Object.keys(transitions).map((s) => (
-                <option key={s}>{s}</option>
+                <option key={s}>{label(s)}</option>
               ))}
             </select>
           </div>
@@ -112,7 +113,7 @@ export function Orders() {
                   <th>Order</th>
                   <th>Customer</th>
                   <th>Status</th>
-                  <th>Payment</th>
+
                   <th>Total</th>
                   <th />
                 </tr>
@@ -131,9 +132,9 @@ export function Orders() {
                       <p className="text-xs text-muted-foreground">{o.phone}</p>
                     </td>
                     <td>
-                      <span className="chip">{o.status}</span>
+                      <span className="chip">{label(o.status)}</span>
                     </td>
-                    <td>{o.paymentStatus.replaceAll("_", " ")}</td>
+
                     <td>{money(o.total)}</td>
                     <td>
                       <Button variant="outline" onClick={() => setSelected(o)}>
@@ -162,7 +163,6 @@ function OrderEditor({
 }) {
   const [form, setForm] = useState({
       status: order.status,
-      paymentStatus: order.paymentStatus,
       carrier: order.carrier,
       trackingNumber: order.trackingNumber,
       shippingNote: order.shippingNote,
@@ -180,6 +180,7 @@ function OrderEditor({
       </Button>
       <section className="panel">
         <OrderDetails order={order} />
+        <OrderCourier order={order} onVersion={version => setForm(f => ({ ...f, expectedVersion: version }))} />
         <div className="mt-6 grid gap-4 border-t pt-5 text-sm sm:grid-cols-2">
           <p>Email: {order.email || "Not provided"}</p>
           <p>Payment method: {order.paymentMethod}</p>
@@ -197,7 +198,7 @@ function OrderEditor({
             const { name, phone, address, ...rest } = form;
             await api("/admin/orders/" + order.id, "PATCH", {
               ...rest,
-              ...(["pending", "confirmed", "processing"].includes(order.status)
+              ...(["pending", "pending-payment", "on-hold", "confirmed", "processing"].includes(order.status)
                 ? { name, phone, address }
                 : {}),
             });
@@ -217,27 +218,11 @@ function OrderEditor({
               value={form.status}
               onChange={(e) => setForm({ ...form, status: e.target.value })}
             >
-              {[order.status, ...transitions[order.status]].map((s) => (
-                <option key={s}>{s}</option>
+              {[order.status, ...(transitions[order.status] || [])].map((s) => (
+                <option key={s}>{label(s)}</option>
               ))}
             </select>
-          </Field>
-          <Field label="Payment status">
-            <select
-              className="field"
-              value={form.paymentStatus}
-              onChange={(e) =>
-                setForm({ ...form, paymentStatus: e.target.value })
-              }
-            >
-              {["unpaid", "pending_verification", "paid", "refunded"].map(
-                (s) => (
-                  <option key={s}>{s}</option>
-                ),
-              )}
-            </select>
-          </Field>
-          <Field label="Shipping carrier">
+          </Field>          <Field label="Shipping carrier">
             <input
               className="field"
               value={form.carrier}
@@ -255,7 +240,7 @@ function OrderEditor({
           </Field>
         </div>
         <div className="mt-5">
-          {["pending", "confirmed", "processing"].includes(order.status) && (
+          {["pending", "pending-payment", "on-hold", "confirmed", "processing"].includes(order.status) && (
             <div className="mb-5 grid gap-4 sm:grid-cols-2">
               <Field label="Recipient name">
                 <input
@@ -323,8 +308,8 @@ export function Incomplete() {
     <>
       <h1 className="mb-3 text-2xl font-bold">Incomplete orders</h1>
       <p className="mb-6 text-sm text-muted-foreground">
-        Only checkout details saved with customer consent appear here. Converted
-        checkouts are removed from this list.
+        Checkout details are saved once a valid Bangladesh mobile number is
+        entered. Converted checkouts are removed from this list.
       </p>
       <input
         className="field mb-5 max-w-md"
@@ -368,9 +353,25 @@ export function Incomplete() {
                   }}
                 >
                   {["incomplete", "contacted", "closed"].map((s) => (
-                    <option key={s}>{s}</option>
+                    <option key={s}>{label(s)}</option>
                   ))}
                 </select>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-3 text-sm">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={async () => {
+                    try {
+                      await api("/admin/incomplete/" + c.id, "DELETE");
+                      await reload();
+                    } catch (e) {
+                      notice((e as Error).message);
+                    }
+                  }}
+                >
+                  Remove incomplete order
+                </Button>
               </div>
               <div className="mt-4 text-sm">
                 {c.items.map((item: any, i: number) => (
@@ -393,3 +394,6 @@ export function Incomplete() {
     </>
   );
 }
+
+
+

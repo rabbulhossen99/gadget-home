@@ -12,6 +12,7 @@ import {
   quoteSchema,
   checkoutSchema,
   orderUpdateSchema,
+  phoneSchema,
 } from "./schemas.mjs";
 import {
   settings,
@@ -33,6 +34,8 @@ import {
   requireAdmin,
   requireUser,
 } from "./auth.mjs";
+import { courierService, mountCourierAdmin, mountCourierWebhooks } from "./couriers.mjs";
+import { trackingService, mountTracking } from "./tracking.mjs";
 
 export function createApp(
   db,
@@ -45,6 +48,8 @@ export function createApp(
   } = {},
 ) {
   const app = express();
+  const couriers = courierService(db);
+  const tracking = trackingService(db);
   app.disable("x-powered-by");
   if (process.env.TRUST_PROXY === "1") app.set("trust proxy", 1);
   app.use(
@@ -85,6 +90,8 @@ export function createApp(
     db.prepare("SELECT 1").get();
     res.json({ ok: true });
   });
+  mountCourierWebhooks(app, couriers);
+  app.locals.couriers = couriers;
   app.use("/api", sessions(db, production));
   app.use("/api", (req, res, next) => {
     if (!["GET", "HEAD", "OPTIONS"].includes(req.method)) {
@@ -237,15 +244,25 @@ export function createApp(
   app.put("/api/checkout-draft", (req, res) => {
     const data = z
       .object({
-        name: z.string().max(200),
-        phone: z.string().max(30),
-        email: z.string().max(200),
-        address: z.string().max(1000),
-        items: cartSchema,
-        consent: z.literal(true),
+        name: z.string().max(200).default(""),
+        phone: phoneSchema,
+        email: z.string().max(200).default(""),
+        address: z.string().max(1000).default(""),
+        items: cartSchema.refine((items) => items.length > 0, "Cart is empty."),
+        checkoutKey: z.string().uuid().optional(),
       })
       .strict()
       .parse(req.body);
+    if (
+      data.checkoutKey &&
+      db
+        .prepare(
+          "SELECT id FROM orders WHERE session_id=? AND idempotency_key=?",
+        )
+        .get(req.session.id, data.checkoutKey)
+    ) {
+      return res.json({ ok: true, status: "converted" });
+    }
     db.prepare(
       "INSERT INTO checkouts(id,session_id,data) VALUES(?,?,?) ON CONFLICT(session_id) DO UPDATE SET data=excluded.data,status='incomplete',updated_at=CURRENT_TIMESTAMP",
     ).run(id(), req.session.id, JSON.stringify(data));
@@ -341,6 +358,8 @@ export function createApp(
   );
 
   app.use("/api/admin", requireAdmin);
+  mountCourierAdmin(app, couriers);
+  mountTracking(app, tracking);
   app.get("/api/admin/overview", (_, res) => {
     const orders = db
       .prepare("SELECT * FROM orders ORDER BY created_at DESC")
@@ -417,6 +436,15 @@ export function createApp(
       .run(status, req.params.id);
     if (!result.changes) fail("Incomplete order not found.", 404);
     audit(db, req.user.id, "checkout." + status, req.params.id);
+    res.json({ ok: true });
+  });
+  app.delete("/api/admin/incomplete/:id", (req, res) => {
+    const result = db
+      .prepare("DELETE FROM checkouts WHERE id=? AND status!='converted'")
+      .run(req.params.id);
+    if (!result.changes)
+      fail("Incomplete order not found or already converted.", 404);
+    audit(db, req.user.id, "checkout.delete", req.params.id);
     res.json({ ok: true });
   });
   app.get("/api/admin/reviews", (_, res) =>

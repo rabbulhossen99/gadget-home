@@ -6,6 +6,7 @@ import { api, money } from "@/lib/api";
 import type { Order, Quote } from "@/lib/types";
 import { Field, ErrorBox, Empty } from "@/components/shared";
 import { Button } from "@/components/ui/button";
+import { normalizePhone, phonePattern } from "../../shared/phone.mjs";
 function useQuote(area: string, coupon: string) {
   const { cart, catalog } = useStore(),
     [quote, setQuote] = useState<Quote | null>(null),
@@ -42,10 +43,12 @@ export function Totals({ quote }: { quote: Quote }) {
         <dt>Subtotal</dt>
         <dd>{money(quote.subtotal)}</dd>
       </div>
-      <div className="flex justify-between">
-        <dt>Shipping</dt>
-        <dd>{quote.shipping ? money(quote.shipping) : "Free"}</dd>
-      </div>
+      {!quote.freeDelivery && (
+        <div className="flex justify-between">
+          <dt>Shipping</dt>
+          <dd>{quote.shipping ? money(quote.shipping) : "Free"}</dd>
+        </div>
+      )}
       <div className="flex justify-between">
         <dt>Discount</dt>
         <dd>−{money(quote.discount)}</dd>
@@ -194,8 +197,6 @@ export function Checkout() {
     [name, setName] = useState(user?.name || ""),
     [phone, setPhone] = useState(""),
     [address, setAddress] = useState(""),
-    [email, setEmail] = useState(user?.email || ""),
-    [consent, setConsent] = useState(false),
     [payment, setPayment] = useState(
       catalog.settings.codEnabled ? "cod" : "manual",
     ),
@@ -210,21 +211,22 @@ export function Checkout() {
   });
   const config = catalog.settings;
   useEffect(() => {
-    if (!consent || phone.length < 5) return;
+    setDraftSaved(false);
+    const normalized = normalizePhone(phone);
+    if (!normalized || !cart.length || busy) return;
     const timer = setTimeout(() => {
       api("/checkout-draft", "PUT", {
         name,
-        phone,
+        phone: normalized,
         address,
-        email,
         items: cart,
-        consent: true,
+        checkoutKey: key,
       })
         .then(() => setDraftSaved(true))
         .catch(() => setDraftSaved(false));
-    }, 900);
+    }, 300);
     return () => clearTimeout(timer);
-  }, [consent, name, phone, address, email, cart]);
+  }, [name, phone, address, cart, key, busy]);
   if (!cart.length)
     return (
       <main className="p-12">
@@ -252,14 +254,12 @@ export function Checkout() {
               name,
               phone,
               address,
-              email,
               note: form.get("note") || "",
               items: cart,
               area,
               coupon: applied,
               paymentMethod: payment,
               paymentReference: form.get("paymentReference") || "",
-              consent,
               idempotencyKey: key,
               expectedTotal: quote.total,
             });
@@ -285,6 +285,7 @@ export function Checkout() {
             <input
               className="field"
               autoComplete="name"
+              placeholder="Name"
               required
               minLength={2}
               maxLength={200}
@@ -297,27 +298,19 @@ export function Checkout() {
               className="field"
               autoComplete="tel"
               type="tel"
-              pattern="01[0-9]{9}"
-              title="11-digit Bangladesh mobile number"
-              placeholder="01700000000"
+              pattern={phonePattern}
+              title="11 digits starting with 01, optionally prefixed with +88"
+              placeholder="01XXXXXXXXX"
               required
               value={phone}
-              onChange={(e) => setPhone(e.target.value.replace(/\s/g, ""))}
-            />
-          </Field>
-          <Field label="Email (optional)">
-            <input
-              className="field"
-              autoComplete="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => setPhone(e.target.value)}
             />
           </Field>
           <Field label="Full address">
             <textarea
               className="field"
               autoComplete="street-address"
+              placeholder="Area, Thana & District"
               required
               minLength={8}
               maxLength={1000}
@@ -345,13 +338,15 @@ export function Checkout() {
                   />
                   <span>
                     {a === "inside" ? "Inside Dhaka" : "Outside Dhaka"}
-                    <small className="block text-muted-foreground">
-                      {money(
-                        a === "inside"
-                          ? config.shippingInside
-                          : config.shippingOutside,
-                      )}
-                    </small>
+                    {!quote?.freeDelivery && (
+                      <small className="block text-muted-foreground">
+                        {money(
+                          a === "inside"
+                            ? config.shippingInside
+                            : config.shippingOutside,
+                        )}
+                      </small>
+                    )}
                   </span>
                 </label>
               ))}
@@ -432,25 +427,6 @@ export function Checkout() {
           <Field label="Order note (optional)">
             <textarea className="field" name="note" rows={2} maxLength={1000} />
           </Field>
-          <label className="flex items-start gap-3 text-sm">
-            <input
-              type="checkbox"
-              className="mt-1"
-              required
-              checked={consent}
-              onChange={(e) => setConsent(e.target.checked)}
-            />
-            <span>
-              {config.checkoutConsent}{" "}
-              <Link to="/policy/privacy" className="underline">
-                Privacy
-              </Link>{" "}
-              ·{" "}
-              <Link to="/policy/returns" className="underline">
-                Returns
-              </Link>
-            </span>
-          </label>
           {draftSaved && (
             <p className="text-xs text-muted-foreground">
               Delivery details saved to help complete your checkout.
@@ -482,7 +458,7 @@ export function Checkout() {
             variant="shop"
             size="shop"
             className="mt-6 w-full"
-            disabled={busy || !quote || loading || !consent}
+            disabled={busy || !quote || loading || !normalizePhone(phone)}
           >
             {busy
               ? "Placing order…"
@@ -508,9 +484,6 @@ export function OrderDetails({ order }: { order: Order }) {
             {order.createdAt} · {order.status}
           </p>
         </div>
-        <span className="chip">
-          Payment: {order.paymentStatus.replaceAll("_", " ")}
-        </span>
       </div>
       <div className="grid gap-6 md:grid-cols-2">
         <div className="rounded-xl border p-5">

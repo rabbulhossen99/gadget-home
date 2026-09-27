@@ -21,6 +21,7 @@ export type Product = {
   images: string[];
   status: "active" | "draft" | "archived";
   featured: boolean;
+  freeDelivery: boolean;
   variants: Variant[];
   targeting?: Record<string, string>;
 };
@@ -103,8 +104,10 @@ export type QuoteLine = {
   productId?: string;
   variantId?: string;
   components?: QuoteLine[];
+  freeDelivery?: boolean;
 };
 export type Quote = {
+  freeDelivery?: boolean;
   lines: QuoteLine[];
   subtotal: number;
   shipping: number;
@@ -119,6 +122,7 @@ export type User = {
   role: "customer" | "admin";
 };
 export type Order = Quote & {
+  courierLocation?: { provider: string; districtId: string; thanaId: string; areaId?: string; district: string; thana: string; area?: string };
   id: string;
   number: string;
   version: number;

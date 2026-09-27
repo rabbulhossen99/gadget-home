@@ -1,4 +1,13 @@
 import { z } from "zod";
+import { normalizePhone } from "../shared/phone.mjs";
+export const phoneSchema = z
+  .string()
+  .max(40)
+  .transform(normalizePhone)
+  .refine(
+    (value) => value !== null,
+    "Enter 11 digits starting with 01, optionally prefixed with +88.",
+  );
 const short = z.string().trim().max(200);
 const text = z.string().trim().max(20000);
 const key = z.string().min(1).max(100);
@@ -61,6 +70,7 @@ export const schemas = {
         .max(12),
       status: z.enum(["active", "draft", "archived"]),
       featured: z.boolean(),
+      freeDelivery: z.boolean().default(false),
       variants: z.array(variantSchema).min(1).max(50),
       targeting: z.record(z.string().max(2000)).default({}),
     })
@@ -217,15 +227,12 @@ export const quoteSchema = z
 export const checkoutSchema = quoteSchema
   .extend({
     name: short.min(2),
-    phone: z
-      .string()
-      .regex(/^01\d{9}$/, "Enter an 11-digit Bangladesh mobile number"),
+    phone: phoneSchema,
     address: z.string().trim().min(8).max(1000),
     email: z.string().email().max(200).or(z.literal("")).default(""),
     note: z.string().max(1000).default(""),
     paymentMethod: z.enum(["cod", "manual"]),
     paymentReference: z.string().trim().max(100).default(""),
-    consent: z.literal(true),
     idempotencyKey: z.string().uuid(),
     expectedTotal: money,
   })
@@ -234,11 +241,16 @@ export const orderUpdateSchema = z
   .object({
     status: z.enum([
       "pending",
-      "confirmed",
       "processing",
+      "on-hold",
+      "completed",
+      "cancelled",
+      "pending-payment",
+      "refunded",
+      // Legacy values remain accepted for existing orders and API clients.
+      "confirmed",
       "shipped",
       "delivered",
-      "cancelled",
       "returned",
     ]),
     paymentStatus: z.enum([
@@ -246,7 +258,7 @@ export const orderUpdateSchema = z
       "pending_verification",
       "paid",
       "refunded",
-    ]),
+    ]).optional(),
     carrier: short,
     trackingNumber: short,
     shippingNote: z.string().max(2000),

@@ -237,11 +237,6 @@ export const configs: Record<
       { key: "returnPolicy", label: "Return policy", type: "textarea" },
       { key: "deliveryPolicy", label: "Delivery policy", type: "textarea" },
       {
-        key: "checkoutConsent",
-        label: "Checkout consent text",
-        type: "textarea",
-      },
-      {
         key: "lowStockThreshold",
         label: "Low stock threshold",
         type: "number",

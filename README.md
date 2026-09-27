@@ -32,14 +32,14 @@ The seed command is repeatable and preserves existing data. It creates **demonst
 | Inventory      | Independently stocked sellable packages/variants with SKU, price, original price and unit count; transactional stock decrement and cancellation/return restocking     |
 | Homepage       | Ordered/enabled hero banners, promotions, category grids, featured/selected product grids, package sections and selectable combo offers                               |
 | Shopping       | Category/subcategory browsing, search, sorting, gallery zoom, package selection, persisted session cart, quantity/removal, cart recovery after unavailable items      |
-| Checkout       | Server-calculated prices/discounts/shipping, coupons, delivery areas, consent, notes, COD and configurable manual mobile payments                                     |
+| Checkout       | Server-calculated prices/discounts/shipping, coupons, delivery areas, phone validation, notes, COD and configurable manual mobile payments                                     |
 | Orders         | Transactional order creation, duplicate-request protection, immutable purchased item/price snapshots, confirmation, private tracking codes, account order history     |
 | Administration | Order search/status filters/details, lifecycle changes, payment status, carrier/tracking/shipping notes, customer records, incomplete checkout workflow, stock alerts |
 | Reports        | Real order/payment statistics and date-range sales, inventory and customer CSV downloads, with spreadsheet formula-injection protection                               |
-| Content        | Store identity, contact details, announcement/footer, shipping rules, payment instructions, privacy/return/delivery policies, checkout consent and retention          |
+| Content        | Store identity, contact details, announcement/footer, shipping rules, payment instructions, privacy/return/delivery policies, incomplete-checkout retention          |
 | Accounts       | Customer registration, sign-in/out, password changes, administrator role enforcement, customer data exports/deletion requests                                         |
 | Reviews        | Delivered-purchase eligibility, one review per customer/product, admin approval before publication                                                                    |
-| Privacy        | Consent-based incomplete checkout saving, automatic draft retention cleanup, customer export, deliberate account/contact anonymization, admin audit trail             |
+| Privacy        | Valid-phone-triggered incomplete checkout saving, automatic draft retention cleanup, customer export, deliberate account/contact anonymization, admin audit trail             |
 | Marketing      | Coupons with minimum spend, validity windows and redemption limits; editable campaign planning; saved product targeting metadata and snippet generation               |
 
 Admin changes appear immediately on the next API request. Open customer pages refresh on focus and every 15 seconds, including cart/checkout quotes. Admin edits use versions to prevent overwriting stock or other changes made since the form was opened.
@@ -86,7 +86,7 @@ pnpm build
 pnpm format:check
 ```
 
-Tests create isolated databases and do not modify your store. They exercise authorization, CSRF/origin enforcement, catalog synchronization, stale edits, cart isolation, price tampering, stock races, duplicate orders, guest order privacy, lifecycle/restocking, coupon limits, combos, category rules, consent, registration, manual payments and uploads.
+Tests create isolated databases and do not modify your store. They exercise authorization, CSRF/origin enforcement, catalog synchronization, stale edits, cart isolation, price tampering, stock races, duplicate orders, guest order privacy, lifecycle/restocking, coupon limits, combos, category rules, phone validation, registration, manual payments and uploads.
 
 For manual UI verification after building, `node tests/preview.mjs` runs an **in-memory, loopback-only disposable store** on port 3002. Its test-only credentials are printed by that command. Never deploy this fixture or expose its port publicly.
 
@@ -116,7 +116,9 @@ Build with the pinned lockfile, run the seed and admin setup deliberately, and s
 
 ### External services and launch work
 
-The originals did not contain working payment gateways, courier APIs, email/SMS delivery, Meta CAPI, Stripe or ad network integrations despite some sample “connected” labels. This application does not claim those services are connected. Automatic payments/refunds, notifications, shipment creation and ad event forwarding require provider credentials, webhook verification and provider-specific integration/testing. Campaigns and Meta fields are planning/metadata tools, not an ad-dispatch service. Email verification and self-service email password recovery are not configured.
+The originals did not contain working payment gateways, email/SMS delivery, Meta CAPI, Stripe or ad network integrations despite some sample “connected” labels. This application does not claim those services are connected. Automatic payments/refunds, notifications, shipment creation and ad event forwarding require provider credentials, webhook verification and provider-specific integration/testing. Campaigns and Meta fields are planning/metadata tools, not an ad-dispatch service. Email verification and self-service email password recovery are not configured.
 
 Before going live, create your administrator, replace demonstration inventory and policies, configure contact/shipping/payment information, select and configure hosting/HTTPS/backups, verify your real payment procedures and perform a staging purchase/fulfillment check. Automated tests and a successful local build do not establish production readiness for an unspecified hosting/payment environment.
 "# gadget-home" 
+
+

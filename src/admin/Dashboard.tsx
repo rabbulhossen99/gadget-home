@@ -427,9 +427,9 @@ export function Privacy() {
         <h2 className="font-bold">Customer data handling</h2>
         <p className="mt-2 text-sm text-muted-foreground">
           Only essential cookies are used. Abandoned checkout details are
-          captured after consent and removed after the configured retention
-          period. Review your store policies and legal retention obligations
-          before completing deletion requests.
+          captured after a valid mobile number is entered and removed after the
+          configured retention period. Review your store policies and legal
+          retention obligations before completing deletion requests.
         </p>
         <Link
           to="/admin/settings"

@@ -19,6 +19,8 @@ import { Products } from "./admin/Products";
 import { Orders, Incomplete } from "./admin/Orders";
 import { Content } from "./admin/Content";
 import { Dashboard, Customers, Reviews, Privacy } from "./admin/Dashboard";
+import { Couriers } from "./admin/Couriers";
+import { Tracking } from "./admin/Tracking";
 import "./styles.css";
 import "@fontsource-variable/fredoka";
 import "@fontsource-variable/plus-jakarta-sans";
@@ -83,6 +85,8 @@ createRoot(document.getElementById("root")!).render(
             <Route index element={<Dashboard />} />
             <Route path="products" element={<Products />} />
             <Route path="orders" element={<Orders />} />
+            <Route path="couriers" element={<Couriers />} />
+            <Route path="tracking" element={<Tracking />} />
             <Route
               path="sales"
               element={<Navigate to="/admin/orders" replace />}

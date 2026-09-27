@@ -98,7 +98,6 @@ async function checkout(client, overrides = {}) {
     note: "",
     paymentMethod: "cod",
     paymentReference: "",
-    consent: true,
     idempotencyKey: randomUUID(),
     expectedTotal: q.data.total,
     ...input,
@@ -477,7 +476,7 @@ test("category cycles and removing ordered variants are rejected", async (t) => 
     400,
   );
 });
-test("checkout drafts require consent and become converted after purchase", async (t) => {
+test("valid checkout numbers save automatically and become converted after purchase", async (t) => {
   const { guest, admin } = await fixture(t);
   const draft = {
     name: "Customer",
@@ -486,14 +485,67 @@ test("checkout drafts require consent and become converted after purchase", asyn
     address: "Dhaka Bangladesh",
     items,
   };
-  assert.equal((await guest.call("/checkout-draft", "PUT", draft)).status, 400);
   assert.equal(
-    (await guest.call("/checkout-draft", "PUT", { ...draft, consent: true }))
+    (await guest.call("/checkout-draft", "PUT", { ...draft, phone: "01712" }))
       .status,
-    200,
+    400,
   );
+  assert.equal((await guest.call("/checkout-draft", "PUT", draft)).status, 200);
   assert.equal((await admin.call("/admin/overview")).data.incomplete.length, 1);
   await checkout(guest);
+  assert.equal((await admin.call("/admin/overview")).data.incomplete.length, 0);
+});
+
+test("local and +88 phone formats save one incomplete checkout without name or address", async (t) => {
+  const { guest, admin } = await fixture(t);
+  for (const phone of ["01244334242", "+88 01308336353", "+8801308336353"]) {
+    assert.equal(
+      (await guest.call("/checkout-draft", "PUT", { phone, items })).status,
+      200,
+    );
+    const drafts = (await admin.call("/admin/overview")).data.incomplete;
+    assert.equal(drafts.length, 1);
+    assert.equal(
+      drafts[0].phone,
+      phone === "01244334242" ? phone : "01308336353",
+    );
+    assert.equal(drafts[0].name, "");
+  }
+  for (const phone of [
+    "",
+    "0124433424",
+    "012443342422",
+    "02244334242",
+    "8801308336353",
+    "+99 01308336353",
+    "+88 0130833635",
+    "01abcdefgh9",
+  ]) {
+    assert.equal(
+      (await guest.call("/checkout-draft", "PUT", { phone, items })).status,
+      400,
+      phone,
+    );
+    assert.equal((await checkout(guest, { phone })).status, 400, phone);
+  }
+});
+
+test("international-format order normalizes phone and delayed draft stays converted", async (t) => {
+  const { guest, admin } = await fixture(t),
+    key = randomUUID();
+  const draft = { phone: "+88 01308336353", items, checkoutKey: key };
+  await guest.call("/checkout-draft", "PUT", draft);
+  const order = await checkout(guest, {
+    phone: draft.phone,
+    idempotencyKey: key,
+  });
+  assert.equal(order.status, 201);
+  assert.equal(order.data.phone, "01308336353");
+  assert.equal(order.data.consentedAt, undefined);
+  assert.equal(
+    (await guest.call("/checkout-draft", "PUT", draft)).data.status,
+    "converted",
+  );
   assert.equal((await admin.call("/admin/overview")).data.incomplete.length, 0);
 });
 test("registration rotates sessions, preserves cart, and cannot elevate roles", async (t) => {
@@ -778,4 +830,142 @@ test("SQL data and consistent backup survive database reopening", async (t) => {
   db = openDatabase(backup);
   assert.equal(record(db, "products", "vitaboost").name, "Persisted name");
   db.close();
+});
+
+test("free-delivery products remove shipping and canceled orders can return to pending", async (t) => {
+  const { db, guest, admin } = await fixture(t);
+  const product = record(db, "products", "vitaboost");
+  product.freeDelivery = true;
+  save(db, "products", product.id, product);
+  const quoteResult = (
+    await guest.call("/quote", "POST", { items, area: "outside", coupon: "" })
+  ).data;
+  assert.equal(quoteResult.shipping, 0);
+  let order = (await checkout(guest, { area: "outside" })).data;
+  const cancel = await admin.call("/admin/orders/" + order.id, "PATCH", {
+    status: "cancelled",
+    paymentStatus: "unpaid",
+    carrier: "",
+    trackingNumber: "",
+    shippingNote: "",
+    expectedVersion: order.version,
+  });
+  assert.equal(cancel.status, 200);
+  assert.equal(
+    record(db, "products", "vitaboost").variants.find((v) => v.id === "double")
+      .stock,
+    30,
+  );
+  order = cancel.data;
+  const restored = await admin.call("/admin/orders/" + order.id, "PATCH", {
+    status: "pending",
+    paymentStatus: "unpaid",
+    carrier: "",
+    trackingNumber: "",
+    shippingNote: "",
+    expectedVersion: order.version,
+  });
+  assert.equal(restored.status, 200);
+  assert.equal(
+    record(db, "products", "vitaboost").variants.find((v) => v.id === "double")
+      .stock,
+    29,
+  );
+  assert.equal(
+    (
+      await admin.call("/admin/orders/" + order.id, "PATCH", {
+        status: "pending",
+        paymentStatus: "unpaid",
+        carrier: "",
+        trackingNumber: "",
+        shippingNote: "",
+        expectedVersion: restored.data.version,
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    record(db, "products", "vitaboost").variants.find((v) => v.id === "double")
+      .stock,
+    29,
+  );
+});
+
+test("free delivery toggles persist and apply only to eligible products including combos", async (t) => {
+  const { db, guest, admin } = await fixture(t);
+  const settings = record(db, "settings", "store");
+  settings.freeShippingThreshold = null;
+  save(db, "settings", "store", settings);
+  async function toggle(key, enabled) {
+    const { id, version, ...data } = record(db, "products", key);
+    const result = await admin.call("/admin/content/products/" + id, "PUT", {
+      version,
+      data: { ...data, freeDelivery: enabled },
+    });
+    assert.equal(result.status, 200);
+  }
+  const getQuote = async (lines, area = "outside") =>
+    (await guest.call("/quote", "POST", { items: lines, area, coupon: "" }))
+      .data;
+  await toggle("vitaboost", true);
+  let q = await getQuote(items);
+  assert.equal(q.shipping, 0);
+  assert.equal(q.freeDelivery, true);
+  assert.equal(q.total, q.subtotal);
+  const mixed = [
+    ...items,
+    {
+      type: "product",
+      productId: "baby-lotion",
+      variantId: "standard",
+      quantity: 1,
+    },
+  ];
+  q = await getQuote(mixed);
+  assert.equal(q.shipping, 12000);
+  assert.equal(q.freeDelivery, false);
+  await toggle("vitaboost", false);
+  q = await getQuote(items, "inside");
+  assert.equal(q.shipping, 6000);
+  assert.equal(q.freeDelivery, false);
+  const combo = [
+    {
+      type: "combo",
+      comboId: "wellness",
+      productIds: ["vitaboost", "baby-lotion"],
+      quantity: 1,
+    },
+  ];
+  await toggle("vitaboost", true);
+  await toggle("baby-lotion", true);
+  q = await getQuote(combo);
+  assert.equal(q.shipping, 0);
+  assert.equal(q.freeDelivery, true);
+  await toggle("baby-lotion", false);
+  q = await getQuote(combo);
+  assert.equal(q.shipping, 12000);
+  assert.equal(q.freeDelivery, false);
+});
+
+test("admin can remove an incomplete checkout", async (t) => {
+  const { guest, admin } = await fixture(t);
+  assert.equal(
+    (
+      await guest.call("/checkout-draft", "PUT", {
+        phone: "01712345678",
+        items,
+      })
+    ).status,
+    200,
+  );
+  const id = (await admin.call("/admin/overview")).data.incomplete[0].id;
+  assert.equal(
+    (await admin.call("/admin/incomplete/" + id, "DELETE")).status,
+    200,
+  );
+  assert.equal((await admin.call("/admin/overview")).data.incomplete.length, 0);
+  assert.equal(
+    (await admin.call("/admin/incomplete/" + id, "DELETE")).status,
+    404,
+  );
 });

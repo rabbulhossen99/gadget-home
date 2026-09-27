@@ -47,6 +47,7 @@ export function Products() {
               images: [""],
               status: "draft",
               featured: false,
+              freeDelivery: false,
               variants: [variant()],
               targeting: {},
             })
@@ -255,6 +256,18 @@ function ProductEditor({
               />
               Featured product
             </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={!!form.freeDelivery}
+                onChange={(e) => set("freeDelivery", e.target.checked)}
+              />
+              Free delivery for this product
+            </label>
+            <p className="text-xs text-muted-foreground">
+              This product ships free. Normal delivery applies to other products
+              in a mixed cart.
+            </p>
           </div>
         </section>
         <section className="panel">

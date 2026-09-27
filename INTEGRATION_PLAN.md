@@ -22,4 +22,5 @@ Neon is declared in the admin dependencies but unused. No environment files, mig
 
 ## Boundaries
 
-Cash on delivery and configurable manual mobile payment instructions are supported; manual payment references remain unverified until reviewed by an administrator. No automatic gateway charge, courier dispatch, email/SMS, Meta CAPI, or legal-compliance claim is fabricated. Such external services require credentials and explicit provider integration. All stored product/content changes feed the same API; clients refetch on focus and periodically.
+Cash on delivery and configurable manual mobile payment instructions are supported; manual payment references remain unverified until reviewed by an administrator. No automatic gateway charge, email/SMS, Meta CAPI, or legal-compliance claim is fabricated. Such external services require credentials and explicit provider integration. All stored product/content changes feed the same API; clients refetch on focus and periodically.
+

@@ -9,6 +9,7 @@ import {
   PieChart,
   Shield,
   Settings,
+  Truck,
   LogOut,
   X,
   Menu,
@@ -38,6 +39,8 @@ const nav = [
   ["Reports", "/admin/reports", BarChart3],
   ["Privacy", "/admin/privacy", Shield],
   ["Settings", "/admin/settings", Settings],
+  ["Courier API", "/admin/couriers", Truck],
+  ["Tracking & Conversion", "/admin/tracking", BarChart3],
 ] as const;
 export function AdminLayout() {
   const { user, logout, catalog } = useStore(),

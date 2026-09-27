@@ -163,7 +163,8 @@ export function StoreLayout() {
 export function ProductCard({ product }: { product: Product }) {
   const { catalog, add, notice } = useStore(),
     v = product.variants.find((v) => v.active),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    navigate = useNavigate();
   if (!v) return null;
   const category = catalog.categories.find((c) => c.id === product.categoryId);
   return (
@@ -200,28 +201,55 @@ export function ProductCard({ product }: { product: Product }) {
             </span>
           )}
         </div>
-        <Button
-          variant="shop"
-          className="mt-4 w-full"
-          disabled={busy || !v.stock}
-          onClick={async () => {
-            setBusy(true);
-            try {
-              await add({
-                type: "product",
-                productId: product.id,
-                variantId: v.id,
-                quantity: 1,
-              });
-            } catch (e) {
-              notice((e as Error).message);
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          {!v.stock ? "Out of stock" : busy ? "Adding…" : "Add to cart"}
-        </Button>
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <Button
+            variant="shop"
+            size="sm"
+            className="h-11 w-full px-2 text-xs sm:px-3 sm:text-sm"
+            disabled={busy || !v.stock}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await add({
+                  type: "product",
+                  productId: product.id,
+                  variantId: v.id,
+                  quantity: 1,
+                });
+              } catch (e) {
+                notice((e as Error).message);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            {!v.stock ? "Out of stock" : busy ? "Adding…" : "Add to cart"}
+          </Button>
+          <Button
+            variant="shopOutline"
+            size="sm"
+            className="h-11 w-full px-2 text-xs sm:px-3 sm:text-sm"
+            disabled={busy || !v.stock}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await add({
+                  type: "product",
+                  productId: product.id,
+                  variantId: v.id,
+                  quantity: 1,
+                });
+                navigate("/checkout");
+              } catch (e) {
+                notice((e as Error).message);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Buy now
+          </Button>
+        </div>
       </div>
     </article>
   );

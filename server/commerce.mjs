@@ -50,6 +50,7 @@ export function quote(db, input) {
       image: product.images[0],
       quantity,
       unitPrice: variant.price,
+      freeDelivery: !!product.freeDelivery,
     };
   }
   for (const item of input.items) {
@@ -87,6 +88,7 @@ export function quote(db, input) {
         total: tier.price * item.quantity,
         image: components[0].image,
         components,
+        freeDelivery: components.every((component) => component.freeDelivery),
       });
     }
   }
@@ -98,6 +100,9 @@ export function quote(db, input) {
       : input.area === "inside"
         ? config.shippingInside
         : config.shippingOutside;
+  const freeDelivery =
+    lines.length > 0 && lines.every((line) => line.freeDelivery);
+  if (freeDelivery) shipping = 0;
   let discount = 0,
     couponId = null;
   if (input.coupon) {
@@ -130,6 +135,7 @@ export function quote(db, input) {
     lines,
     subtotal,
     shipping,
+    freeDelivery,
     discount,
     total: subtotal + shipping - discount,
     currency: config.currency,
@@ -197,7 +203,7 @@ export function placeOrder(db, session, input) {
       trackingNumber: "",
       shippingNote: "",
       version: 1,
-      consentedAt: new Date().toISOString(),
+      submittedAt: new Date().toISOString(),
     };
     db.prepare(
       "INSERT INTO orders(id,number,user_id,session_id,idempotency_key,token_hash,data) VALUES(?,?,?,?,?,?,?)",
@@ -248,12 +254,19 @@ export function placeOrder(db, session, input) {
   });
 }
 export const transitions = {
-  pending: ["confirmed", "cancelled"],
+  pending: ["processing", "on-hold", "cancelled", "pending-payment", "confirmed"],
+  "pending-payment": ["pending", "processing", "on-hold", "cancelled"],
+  "on-hold": ["pending", "processing", "cancelled"],
+  processing: ["on-hold", "completed", "cancelled", "shipped"],
+  completed: ["refunded"],
+  refunded: [],
+  // Legacy transitions remain available for existing orders.
+  
   confirmed: ["processing", "cancelled"],
-  processing: ["shipped", "cancelled"],
+  
   shipped: ["delivered", "returned"],
   delivered: ["returned"],
-  cancelled: [],
+  cancelled: ["pending"],
   returned: [],
 };
 export function updateOrder(db, orderId, input, actor) {
@@ -275,13 +288,10 @@ export function updateOrder(db, orderId, input, actor) {
     );
     if (
       deliveryChanged &&
-      !["pending", "confirmed", "processing"].includes(row.status)
+      !["pending", "pending-payment", "on-hold", "confirmed", "processing"].includes(row.status)
     )
       fail("Delivery contact details can only be changed before shipping.");
-    if (
-      input.paymentStatus === "refunded" &&
-      !["paid", "refunded"].includes(data.paymentStatus)
-    )
+    if (input.paymentStatus === "refunded" && !["paid", "refunded"].includes(data.paymentStatus))
       fail("Only a recorded payment can be marked refunded.");
     if (
       input.status !== row.status &&
@@ -299,6 +309,20 @@ export function updateOrder(db, orderId, input, actor) {
       }
       db.prepare("DELETE FROM coupon_uses WHERE order_id=?").run(orderId);
     }
+    if (row.status === "cancelled" && input.status === "pending") {
+      for (const item of db
+        .prepare("SELECT * FROM order_items WHERE order_id=?")
+        .all(orderId)) {
+        const product = record(db, "products", item.product_id);
+        const variant = product?.variants.find((v) => v.id === item.variant_id);
+        if (!variant)
+          fail("Cannot reserve stock: the original package is missing.", 409);
+        if (variant.stock < item.quantity)
+          fail("Not enough stock to restore this order to Pending.", 409);
+        variant.stock -= item.quantity;
+        save(db, "products", product.id, product);
+      }
+    }
     const { expectedVersion, status, ...changes } = input;
     db.prepare("UPDATE orders SET data=?,status=? WHERE id=?").run(
       JSON.stringify({ ...data, ...changes, version: data.version + 1 }),
@@ -313,7 +337,7 @@ export function updateOrder(db, orderId, input, actor) {
       actor,
       JSON.stringify({
         status,
-        message: `${row.status} → ${status}; payment: ${changes.paymentStatus}${deliveryChanged ? "; delivery details updated" : ""}`,
+        message: `${row.status} → ${status}${deliveryChanged ? "; delivery details updated" : ""}`,
         carrier: changes.carrier,
         trackingNumber: changes.trackingNumber,
       }),
