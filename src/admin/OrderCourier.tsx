@@ -6,12 +6,13 @@ import { Button } from "@/components/ui/button";
 import { ErrorBox, Field } from "@/components/shared";
 import type { Order } from "@/lib/types";
 type Place = { id: string; name: string };
-export function OrderCourier({ order, onVersion }: { order: Order; onVersion: (version: number) => void }) {
+export function OrderCourier({ order, enabled = false, onVersion }: { order: Order; enabled?: boolean; onVersion: (version: number) => void }) {
   const { data, error: loadError, reload } = useResource<any>(`/admin/orders/${order.id}/courier`);
   const [provider, setProvider] = useState(order.courierLocation?.provider || "steadfast");
   const [district, setDistrict] = useState(order.courierLocation?.districtId || "");
   const [thana, setThana] = useState(order.courierLocation?.thanaId || "");
   const [area, setArea] = useState(order.courierLocation?.areaId || "");
+  const [locationType, setLocationType] = useState(order.courierLocation?.locationType || "");
   const [districts, setDistricts] = useState<Place[]>([]);
   const [thanas, setThanas] = useState<Place[]>([]);
   const [areas, setAreas] = useState<Place[]>([]);
@@ -28,13 +29,13 @@ export function OrderCourier({ order, onVersion }: { order: Order; onVersion: (v
     setLoading(true); setError(""); setDistricts([]); setThanas([]); setAreas([]);
     Promise.all([
       api<Place[]>(`/admin/couriers/${provider}/locations`),
-      district ? api<Place[]>(`/admin/couriers/${provider}/locations?districtId=${encodeURIComponent(district)}`) : Promise.resolve([]),
-      thana ? api<Place[]>(`/admin/couriers/${provider}/locations?districtId=${encodeURIComponent(district)}&zoneId=${encodeURIComponent(thana)}`) : Promise.resolve([]),
+      district ? api<Place[]>(`/admin/couriers/${provider}/locations?districtId=${encodeURIComponent(district)}${locationType ? `&locationType=${locationType}` : ""}`) : Promise.resolve([]),
+      provider === "pathao" && thana ? api<Place[]>(`/admin/couriers/${provider}/locations?districtId=${encodeURIComponent(district)}&zoneId=${encodeURIComponent(thana)}`) : Promise.resolve([]),
     ]).then(([a,b,c]) => { if (active) { setDistricts(a); setThanas(b); setAreas(c); } })
       .catch(e => { if (active) setError(e.message); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [provider, district, thana, retry]);
+  }, [provider, district, locationType, thana, retry]);
   async function action(fn: () => Promise<void>) {
     setBusy(true); setError(""); setMessage("");
     try { await fn(); await reload(); } catch(e) { setError((e as Error).message); }
@@ -52,9 +53,10 @@ export function OrderCourier({ order, onVersion }: { order: Order; onVersion: (v
           <option value="">Select district</option>{districts.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
         </select>
       </Field>
+      {provider === "steadfast" && district && <Field label="Location type"><select className="field" disabled={busy || locked} value={locationType} onChange={e => { setLocationType(e.target.value); setThana(""); setSaved(false); }}><option value="">Select type</option><option value="city">Dhaka City Area (Thana)</option><option value="suburban">Dhaka District Suburban Area (Upazila)</option></select></Field>}
       {provider === "pathao" && <Field label="Area (optional)"><select className="field" disabled={busy || locked || loading || !thana} value={area} onChange={e => { setArea(e.target.value); setSaved(false); }}><option value="">Select area (optional)</option>{areas.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}</select></Field>}
       <Field label={provider === "pathao" ? "Thana / Upazila (Courier zone)" : "Thana / Upazila"}>
-        <select className="field" disabled={busy || locked || loading || !district} value={thana} onChange={e => { setThana(e.target.value); setSaved(false); }}>
+        <select className="field" disabled={busy || locked || loading || !district || (provider === "steadfast" && !locationType)} value={thana} onChange={e => { setThana(e.target.value); setSaved(false); }}>
           <option value="">Select thana / upazila</option>{thanas.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
         </select>
       </Field>
@@ -66,14 +68,15 @@ export function OrderCourier({ order, onVersion }: { order: Order; onVersion: (v
     {message && <p role="status" className="text-sm">{message}</p>}
     {!locked && <div className="flex flex-wrap gap-3">
       <Button variant="outline" disabled={busy || loading || !district || !thana || saved} onClick={() => action(async () => {
-        const result = await api<any>(`/admin/orders/${order.id}/courier/location`, "PUT", { provider, districtId: district, thanaId: thana, ...(area ? { areaId: area } : {}), expectedVersion: version });
+        const result = await api<any>(`/admin/orders/${order.id}/courier/location`, "PUT", { provider, districtId: district, thanaId: thana, ...(locationType ? { locationType } : {}), ...(area ? { areaId: area } : {}), expectedVersion: version });
         setVersion(result.version); onVersion(result.version); setSaved(true); setMessage("Delivery location saved.");
       })}>Save delivery location</Button>
-      <Button disabled={busy || !data || !saved || !["processing","confirmed"].includes(order.status)} onClick={() => action(async () => {
+      <Button disabled={!enabled || busy || !data || !saved || !["pending","processing","confirmed"].includes(order.status)} onClick={() => action(async () => {
         await api(`/admin/orders/${order.id}/courier`, "POST", { provider, expectedVersion: version });
         setMessage("Courier confirmed the booking. Reload the order before further edits.");
       })}>{busy ? "Working…" : shipment?.state === "rejected" ? "Retry courier booking" : "Send to Courier"}</Button>
     </div>}
+    {!enabled && !locked && <p className="text-sm">Save the order update above before sending it to a courier.</p>}
     {!["processing","confirmed"].includes(order.status) && !locked && <p className="text-sm">Move the order to Processing before sending it.</p>}
     {shipment && <div className="space-y-2 text-sm">
       <p>{shipment.provider} · {shipment.courier_status || shipment.state}</p>

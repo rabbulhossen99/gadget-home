@@ -34,7 +34,7 @@ import {
   requireAdmin,
   requireUser,
 } from "./auth.mjs";
-import { courierService, mountCourierAdmin, mountCourierWebhooks } from "./couriers.mjs";
+import { courierService, mountCourierAdmin } from "./couriers.mjs";
 import { trackingService, mountTracking } from "./tracking.mjs";
 
 export function createApp(
@@ -90,7 +90,7 @@ export function createApp(
     db.prepare("SELECT 1").get();
     res.json({ ok: true });
   });
-  mountCourierWebhooks(app, couriers);
+
   app.locals.couriers = couriers;
   app.use("/api", sessions(db, production));
   app.use("/api", (req, res, next) => {
@@ -358,13 +358,14 @@ export function createApp(
   );
 
   app.use("/api/admin", requireAdmin);
+  app.use("/api/courier", requireAdmin);
   mountCourierAdmin(app, couriers);
   mountTracking(app, tracking);
   app.get("/api/admin/overview", (_, res) => {
     const orders = db
       .prepare("SELECT * FROM orders ORDER BY created_at DESC")
       .all()
-      .map((o) => orderView(db, o, true));
+      .map((o) => ({ ...orderView(db, o, true), courierShipment: couriers.shipment(o.id).shipment }));
     const products = records(db, "products");
     const customers = db
       .prepare(
@@ -680,7 +681,7 @@ export function createApp(
     const status = error.status || 500;
     if (status >= 500) console.error(error);
     res.status(status).json({
-      error: status >= 500 ? "Server error. Please retry." : error.message,
+      error: error.message,
     });
   });
   return app;

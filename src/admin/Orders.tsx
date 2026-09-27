@@ -80,7 +80,6 @@ export function Orders() {
           onClose={() => setSelected(null)}
           onSave={async () => {
             await reload();
-            setSelected(null);
             notice("Order updated");
           }}
         />
@@ -114,7 +113,7 @@ export function Orders() {
                   <th>Customer</th>
                   <th>Status</th>
 
-                  <th>Total</th>
+                  <th>Courier</th><th>Tracking ID</th><th>Courier Status</th><th>Total</th>
                   <th />
                 </tr>
               </thead>
@@ -135,7 +134,7 @@ export function Orders() {
                       <span className="chip">{label(o.status)}</span>
                     </td>
 
-                    <td>{money(o.total)}</td>
+                    <td>{o.courierShipment?.provider || o.carrier || "—"}</td><td>{o.courierShipment?.tracking_id || o.trackingNumber || "—"}</td><td>{o.courierShipment?.courier_status || o.courierShipment?.state || "—"}</td><td>{money(o.total)}</td>
                     <td>
                       <Button variant="outline" onClick={() => setSelected(o)}>
                         View order
@@ -169,10 +168,12 @@ function OrderEditor({
       name: order.name,
       phone: order.phone,
       address: order.address,
+      note: order.note || "",
       expectedVersion: order.version,
     }),
     [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [savedUpdate, setSavedUpdate] = useState(false);
   return (
     <div className="space-y-6">
       <Button variant="outline" onClick={onClose}>
@@ -180,7 +181,6 @@ function OrderEditor({
       </Button>
       <section className="panel">
         <OrderDetails order={order} />
-        <OrderCourier order={order} onVersion={version => setForm(f => ({ ...f, expectedVersion: version }))} />
         <div className="mt-6 grid gap-4 border-t pt-5 text-sm sm:grid-cols-2">
           <p>Email: {order.email || "Not provided"}</p>
           <p>Payment method: {order.paymentMethod}</p>
@@ -202,6 +202,7 @@ function OrderEditor({
                 ? { name, phone, address }
                 : {}),
             });
+            setSavedUpdate(true);
             await onSave();
           } catch (e) {
             setError((e as Error).message);
@@ -219,7 +220,7 @@ function OrderEditor({
               onChange={(e) => setForm({ ...form, status: e.target.value })}
             >
               {[order.status, ...(transitions[order.status] || [])].map((s) => (
-                <option key={s}>{label(s)}</option>
+                <option key={s} value={s}>{label(s)}</option>
               ))}
             </select>
           </Field>          <Field label="Shipping carrier">
@@ -284,6 +285,9 @@ function OrderEditor({
               }
             />
           </Field>
+          <Field label="Customer note">
+            <textarea className="field" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
+          </Field>
         </div>
         {["cancelled", "returned"].includes(form.status) &&
           form.status !== order.status && (
@@ -297,6 +301,7 @@ function OrderEditor({
           {busy ? "Saving…" : "Save order update"}
         </Button>
       </form>
+      <OrderCourier order={{ ...order, ...form }} enabled={savedUpdate} onVersion={version => setForm(f => ({ ...f, expectedVersion: version }))} />
     </div>
   );
 }
@@ -394,6 +399,3 @@ export function Incomplete() {
     </>
   );
 }
-
-
-

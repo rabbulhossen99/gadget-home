@@ -1,13 +1,13 @@
-import { createCipheriv, createDecipheriv, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { z } from 'zod';
-import express from 'express';
+
 import { id, transaction, audit } from './db.mjs';
 import { fail, hash, orderView } from './commerce.mjs';
 import { createCourierAdapter } from './courier-adapters.mjs';
 import { administrativeLocations } from './delivery-locations.mjs';
 
 const providers = z.enum(['steadfast', 'pathao']);
-const secretNames = ['apiKey', 'secretKey', 'clientId', 'clientSecret', 'username', 'password', 'webhookSecret'];
+const secretNames = ['apiKey', 'secretKey', 'clientId', 'clientSecret', 'username', 'password'];
 const configSchema = z.object({
   enabled: z.boolean(), active: z.boolean().default(false), verifiedContract: z.boolean().default(false),
   environment: z.enum(['sandbox', 'production']).default('sandbox'),
@@ -46,18 +46,22 @@ export function installCourierTables(db) {
       id TEXT PRIMARY KEY, order_id TEXT NOT NULL REFERENCES orders(id),
       action TEXT NOT NULL, message TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
-    CREATE TABLE IF NOT EXISTS courier_webhooks(
-      provider TEXT NOT NULL, event_hash TEXT NOT NULL, order_id TEXT NOT NULL REFERENCES orders(id),
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(provider,event_hash)
-    );
+    DROP TABLE IF EXISTS courier_webhooks;
+    DELETE FROM courier_logs WHERE action='webhook';
     CREATE INDEX IF NOT EXISTS courier_logs_order ON courier_logs(order_id,created_at);
   `);
 }
 export function courierService(db, adapterFactory = createCourierAdapter) {
   installCourierTables(db);
+  function cleanConfig(provider, encrypted) {
+    const original = decrypt(provider, encrypted);
+    const clean = configSchema.parse(Object.fromEntries(Object.entries(original).filter(([key]) => key in configSchema.shape)));
+    if (JSON.stringify(clean) !== JSON.stringify(original)) db.prepare('UPDATE courier_settings SET encrypted=? WHERE provider=?').run(encrypt(provider, clean), provider);
+    return clean;
+  }
   const getConfig = provider => {
     const row = db.prepare('SELECT encrypted FROM courier_settings WHERE provider=?').get(provider);
-    return row ? decrypt(provider, row.encrypted) : { enabled: false, active: false, verifiedContract: false, environment: 'sandbox', storeId: 0, defaultWeight: 0.5 };
+    return row ? cleanConfig(provider, row.encrypted) : { enabled: false, active: false, verifiedContract: false, environment: 'sandbox', storeId: 0, defaultWeight: 0.5 };
   };
   const log = (orderId, action, message) => db.prepare('INSERT INTO courier_logs(id,order_id,action,message) VALUES(?,?,?,?)').run(id(), orderId, action, message);
   function configuration(provider, value) {
@@ -67,14 +71,19 @@ export function courierService(db, adapterFactory = createCourierAdapter) {
       for (const name of secretNames) input[name] = input[name] || previous[name] || '';
       if (input.enabled) {
         const required = provider === 'steadfast' ? ['apiKey', 'secretKey'] : ['clientId', 'clientSecret', 'username', 'password'];
-        if (required.some(k => !input[k]) || input.webhookSecret.length < 32) fail('Enter all credentials and a webhook secret of at least 32 characters.');
-        if (!input.verifiedContract) fail('Verify the provider contract in your merchant portal before enabling.');
+        if (required.some(k => !input[k])) fail('Enter all courier API credentials.');
         if (provider === 'pathao' && !input.storeId) fail('Select your Pathao pickup store.');
       }
       db.prepare('INSERT INTO courier_settings VALUES(?,?) ON CONFLICT(provider) DO UPDATE SET encrypted=excluded.encrypted').run(provider, encrypt(provider, input));
+      if (input.active) {
+        for (const other of ['pathao', 'steadfast'].filter(name => name !== provider)) {
+          const row = db.prepare('SELECT encrypted FROM courier_settings WHERE provider=?').get(other);
+          if (row) { const otherConfig = cleanConfig(other, row.encrypted); if (otherConfig.active) { otherConfig.active = false; db.prepare('UPDATE courier_settings SET encrypted=? WHERE provider=?').run(encrypt(other, otherConfig), other); } }
+        }
+      }
     }
     const config = getConfig(provider);
-    return { ...config, ...Object.fromEntries(secretNames.map(k => [k, ''])), configured: Object.fromEntries(secretNames.map(k => [k, !!config[k]])) };
+    return { ...config, ...Object.fromEntries(secretNames.map(k => [k, ''])), configured: Object.fromEntries(secretNames.map(k => [k, !!config[k]])), masked: Object.fromEntries(secretNames.map(k => [k, config[k] ? '••••••••••••••••' : ''])) };
   }
   function shipment(orderId) {
     const order = db.prepare('SELECT data FROM orders WHERE id=?').get(orderId);
@@ -88,11 +97,11 @@ export function courierService(db, adapterFactory = createCourierAdapter) {
     return adapterFactory(provider, c);
   };
   const locationCache = new Map();
-  async function locations(provider, districtId = '', zoneId = '') {
+  async function locations(provider, districtId = '', zoneId = '', locationType = '') {
     providers.parse(provider);
     if (districtId && !/^[0-9]{1,10}$/.test(districtId)) fail('Invalid district ID.');
-    if (zoneId && !/^[0-9]{1,10}$/.test(zoneId)) fail('Invalid zone ID.');
-    if (provider === 'steadfast') return administrativeLocations(districtId);
+    if (zoneId && provider === 'pathao' && !/^[0-9]{1,10}$/.test(zoneId)) fail('Invalid zone ID.');
+    if (provider === 'steadfast') return administrativeLocations(districtId, locationType);
     const config = getConfig(provider);
     const key = hash(JSON.stringify(config)) + ':' + districtId + ':' + zoneId;
     const cached = locationCache.get(key);
@@ -104,13 +113,13 @@ export function courierService(db, adapterFactory = createCourierAdapter) {
     return rows;
   }
   async function saveLocation(orderId, input, actor) {
-    const { provider, districtId, thanaId, areaId, expectedVersion } = z.object({
+    const { provider, districtId, thanaId, areaId, locationType, expectedVersion } = z.object({
       provider: providers, districtId: z.string().regex(/^[0-9]{1,10}$/),
-      thanaId: z.string().regex(/^[0-9]{1,10}$/), areaId: z.string().regex(/^[0-9]{1,10}$/).optional(), expectedVersion: z.number().int().positive(),
+      thanaId: z.string().min(1).max(40), areaId: z.string().regex(/^[0-9]{1,10}$/).optional(), locationType: z.enum(['city','suburban']).optional(), expectedVersion: z.number().int().positive(),
     }).strict().parse(input);
     const district = (await locations(provider)).find(x => x.id === districtId);
     if (!district) fail('Select a valid district.');
-    const thana = (await locations(provider, districtId)).find(x => x.id === thanaId);
+    const thana = (await locations(provider, districtId, '', locationType)).find(x => x.id === thanaId);
     if (!thana) fail('Select a thana belonging to the selected district.');
     const area = areaId ? (await locations(provider, districtId, thanaId)).find(x => x.id === areaId) : null;
     if (areaId && !area) fail('Select an area belonging to the selected zone.');
@@ -139,7 +148,7 @@ export function courierService(db, adapterFactory = createCourierAdapter) {
       const row = db.prepare('SELECT * FROM orders WHERE id=?').get(orderId);
       order = orderView(db, row, true);
       if (order.version !== version) fail('Order changed. Reload before sending.', 409);
-      if (!['processing', 'confirmed'].includes(order.status)) fail('Move the order to Processing before sending it to a courier.');
+      if (!['pending', 'processing', 'confirmed'].includes(order.status)) fail('Move the order to Pending or Processing before sending it to a courier.');
       if (!order.district || !order.thana) fail('District and thana are missing. Complete delivery details first.');
       if (order.courierLocation?.provider !== provider) fail('Save a delivery location for the selected courier first.');
       if (order.paymentMethod !== 'cod' && order.paymentStatus !== 'paid') fail('This prepaid order has not been verified as paid. Do not ship with zero COD until payment is confirmed.');
@@ -184,7 +193,7 @@ export function courierService(db, adapterFactory = createCourierAdapter) {
     const row = shipment(orderId).shipment;
     try {
       const orderRow = db.prepare('SELECT * FROM orders WHERE id=?').get(orderId);
-      const status = await adapter(row.provider).track({ consignmentId: row.consignment_id, orderNumber: orderRow.number });
+      const { status } = await adapter(row.provider).track({ consignmentId: row.consignment_id, orderNumber: orderRow.number });
       transaction(db, () => {
         // Use freshly read state after the external request, never a stale order snapshot.
         const current = db.prepare('SELECT * FROM orders WHERE id=?').get(orderId);
@@ -211,29 +220,6 @@ export function courierService(db, adapterFactory = createCourierAdapter) {
     }
     return shipment(orderId);
   }
-  function webhook(provider, headers, payload) {
-    providers.parse(provider);
-    const config = getConfig(provider);
-    const supplied = provider === 'steadfast' ? String(headers.authorization || '').replace(/^Bearer /, '') : String(headers['x-pathao-signature'] || '');
-    const expected = config.webhookSecret || '';
-    if (!config.enabled || expected.length < 32 || supplied.length !== expected.length || !timingSafeEqual(Buffer.from(supplied), Buffer.from(expected)))
-      fail('Invalid courier webhook authentication.', 401);
-    if (provider === 'pathao' && payload.event === 'webhook_integration') return { accepted: true };
-    const cid = String(payload.consignment_id || '');
-    if (!cid || cid.length > 150) fail('Missing consignment ID.');
-    const row = db.prepare("SELECT * FROM courier_shipments WHERE provider=? AND consignment_id=? AND state='booked'").get(provider, cid);
-    // A callback can precede persistence of the booking response; return 503 for courier retry.
-    if (!row) fail('Shipment is not registered yet. Retry this notification.', 503);
-    const eventHash = hash(JSON.stringify(payload));
-    transaction(db, () => {
-      const result = db.prepare('INSERT OR IGNORE INTO courier_webhooks(provider,event_hash,order_id) VALUES(?,?,?)').run(provider, eventHash, row.order_id);
-      if (result.changes) {
-        db.prepare('UPDATE courier_shipments SET next_sync=0 WHERE order_id=?').run(row.order_id);
-        log(row.order_id, 'webhook', 'Authenticated notification queued for API verification.');
-      }
-    });
-    return { accepted: true };
-  }
   async function tick() {
     const rows = db.prepare("SELECT order_id FROM courier_shipments WHERE state='booked' AND next_sync<=? AND lease_until<? ORDER BY next_sync LIMIT 10").all(Date.now(), Date.now());
     for (const row of rows) await track(row.order_id);
@@ -243,7 +229,7 @@ export function courierService(db, adapterFactory = createCourierAdapter) {
     if (!row || !['uncertain', 'submitting'].includes(row.state)) fail('Only uncertain bookings can be reconciled.');
     const order = db.prepare('SELECT * FROM orders WHERE id=?').get(orderId);
     // This is an explicit admin linking action; no second parcel is created.
-    const status = await adapter(row.provider).track({ consignmentId, orderNumber: order.number });
+    const { status } = await adapter(row.provider).track({ consignmentId, orderNumber: order.number });
     transaction(db, () => {
       db.prepare("UPDATE courier_shipments SET state='booked',consignment_id=?,tracking_id=?,courier_status=?,shipped_at=CURRENT_TIMESTAMP,next_sync=0,error=NULL WHERE order_id=?")
         .run(consignmentId, consignmentId, status, orderId);
@@ -254,7 +240,7 @@ export function courierService(db, adapterFactory = createCourierAdapter) {
     });
     return shipment(orderId);
   }
-  return { configuration, locations, saveLocation, shipment, book, track, webhook, tick, reconcile, test: p => { providers.parse(p); return adapter(p, false).test(); } };
+  return { configuration, locations, saveLocation, shipment, book, track, tick, reconcile, test: (p, input = {}) => { providers.parse(p); const overrides = configSchema.partial().parse(input); const config = { ...getConfig(p), ...overrides }; for (const key of secretNames) config[key] = overrides[key] || getConfig(p)[key]; return adapterFactory(p, config).test(); } };
 }
 export function mapCourierStatus(provider, raw) {
   const s = raw.toLowerCase().replaceAll(/[ _-]+/g, '_');
@@ -268,16 +254,14 @@ export function mapCourierStatus(provider, raw) {
   };
   return common[s] || null;
 }
-export function mountCourierWebhooks(app, service) {
-  app.post('/api/webhooks/:provider', express.json({ limit: '64kb' }), (req, res) => {
-    const result = service.webhook(req.params.provider, req.headers, req.body || {});
-    if (req.params.provider === 'pathao') res.set('X-Pathao-Merchant-Webhook-Integration-Secret', process.env.PATHAO_WEBHOOK_INTEGRATION_SECRET || '');
-    res.json(result);
-  });
-}
 export function mountCourierAdmin(app, service) {
+  // Stable aliases used by the settings screen and integrations outside the admin router.
+  app.post('/api/courier/:provider/test', async (req, res) => {
+    providers.parse(req.params.provider);
+    res.json(await service.test(req.params.provider, req.body));
+  });
   app.get('/api/admin/couriers/:provider/locations', async (req, res) => res.json(
-    await service.locations(req.params.provider, String(req.query.districtId || ''), String(req.query.zoneId || ''))
+    await service.locations(req.params.provider, String(req.query.districtId || ''), String(req.query.zoneId || ''), String(req.query.locationType || ''))
   ));
   app.put('/api/admin/orders/:id/courier/location', async (req, res) => res.json(
     await service.saveLocation(req.params.id, req.body, req.user.id)
@@ -286,8 +270,8 @@ export function mountCourierAdmin(app, service) {
     steadfast: service.configuration('steadfast'), pathao: service.configuration('pathao'),
     encryptionReady: /^[a-f0-9]{64}$/i.test(process.env.COURIER_ENCRYPTION_KEY || ''),
   }));
-  app.put('/api/admin/couriers/:provider', (req, res) => res.json(service.configuration(req.params.provider, req.body)));
-  app.post('/api/admin/couriers/:provider/test', async (req, res) => res.json(await service.test(req.params.provider)));
+  app.put('/api/admin/couriers/:provider', (req, res) => res.json({ success: true, message: 'Courier settings saved successfully', settings: service.configuration(req.params.provider, req.body) }));
+  app.post('/api/admin/couriers/:provider/test', async (req, res) => res.json(await service.test(req.params.provider, req.body)));
   app.get('/api/admin/orders/:id/courier', (req, res) => res.json(service.shipment(req.params.id)));
   app.post('/api/admin/orders/:id/courier', async (req, res) => {
     const input = z.object({ provider: providers, expectedVersion: z.number().int().positive() }).strict().parse(req.body);

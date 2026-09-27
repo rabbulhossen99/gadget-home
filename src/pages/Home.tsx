@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useSearchParams, useParams } from "react-router-dom";
+import { Link, useSearchParams, useParams, useNavigate } from "react-router-dom";
 import {
   Baby,
   HeartPulse,
@@ -244,6 +244,7 @@ function Packages({ product: p }: { product: Product }) {
 }
 function ComboBuilder({ combo }: { combo: Combo }) {
   const { catalog, add, notice } = useStore(),
+    navigate = useNavigate(),
     [count, setCount] = useState(combo.tiers[0].count),
     [selected, setSelected] = useState<string[]>([]),
     [busy, setBusy] = useState(false);
@@ -313,12 +314,17 @@ function ComboBuilder({ combo }: { combo: Combo }) {
             );
           })}
       </div>
+      <div className="mt-7 flex justify-center">
       <Button
         variant="shop"
         size="shop"
-        className="mt-6"
-        disabled={busy || selected.length !== count || !tier}
+        className="min-w-44"
+        disabled={busy || !tier}
         onClick={async () => {
+          if (selected.length !== count) {
+            notice("Please select required products first.");
+            return;
+          }
           setBusy(true);
           try {
             await add({
@@ -327,6 +333,7 @@ function ComboBuilder({ combo }: { combo: Combo }) {
               productIds: selected,
               quantity: 1,
             });
+            navigate("/checkout");
           } catch (e) {
             notice((e as Error).message);
           } finally {
@@ -334,8 +341,9 @@ function ComboBuilder({ combo }: { combo: Combo }) {
           }
         }}
       >
-        Add combo · {money(tier?.price || 0)}
+        Buy Now - {money(tier?.price || 0)}
       </Button>
+      </div>
     </div>
   );
 }

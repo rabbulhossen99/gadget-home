@@ -262,6 +262,7 @@ export const orderUpdateSchema = z
     carrier: short,
     trackingNumber: short,
     shippingNote: z.string().max(2000),
+    note: z.string().max(2000).optional(),
     name: short.min(2).optional(),
     phone: z
       .string()
