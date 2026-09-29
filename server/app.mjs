@@ -48,10 +48,11 @@ export function createApp(
   } = {},
 ) {
   const app = express();
+app.set('trust proxy', 1);
+
   const couriers = courierService(db);
   const tracking = trackingService(db);
   app.disable("x-powered-by");
-  if (process.env.TRUST_PROXY === "1") app.set("trust proxy", 1);
   app.use(
     helmet({
       contentSecurityPolicy: production
@@ -200,6 +201,12 @@ export function createApp(
     });
     res.json({ ok: true });
   });
+
+
+  app.get("/api/settings", (_, res) => {
+    res.json(settings(db));
+  });
+
   app.get("/api/catalog", (_, res) => {
     const categories = records(db, "categories")
       .filter((c) => categoryVisible(db, c.id))
