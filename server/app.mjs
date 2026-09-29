@@ -631,10 +631,34 @@ app.set('trust proxy', 1);
         records(db, "combos").some((c) => c.productIds.includes(key))
       )
         fail("Remove this product from combos first.");
-      if (kind === "products" || kind === "categories")
-        db.prepare(`DELETE FROM ${kind} WHERE id=?`).run(key);
-      else
-        db.prepare("DELETE FROM content WHERE kind=? AND id=?").run(kind, key);
+      if (kind === "categories") {
+  db.prepare(`
+    UPDATE products
+    SET category_id=NULL
+    WHERE category_id=?
+  `).run(key);
+
+  db.prepare(`
+    UPDATE categories
+    SET parent_id=NULL
+    WHERE parent_id=?
+  `).run(key);
+
+  db.prepare(`
+    DELETE FROM categories WHERE id=?
+  `).run(key);
+
+} else if (kind === "products") {
+
+  db.prepare(`
+    DELETE FROM products WHERE id=?
+  `).run(key);
+
+} else {
+
+  db.prepare("DELETE FROM content WHERE kind=? AND id=?").run(kind, key);
+
+}
       if (["products", "categories"].includes(kind))
         for (const s of records(db, "sections")) {
           s.productIds = s.productIds.filter(
