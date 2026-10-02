@@ -1,4 +1,4 @@
-import { OrderCourier } from "./OrderCourier";
+import { OrderCourier, type CourierOrderState } from "./OrderCourier";
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useResource, useStore } from "@/lib/store";
@@ -101,7 +101,7 @@ export function Orders() {
             >
               <option value="">All statuses</option>
               {Object.keys(transitions).map((s) => (
-                <option key={s}>{label(s)}</option>
+                <option key={s} value={s}>{label(s)}</option>
               ))}
             </select>
           </div>
@@ -151,8 +151,18 @@ export function Orders() {
     </>
   );
 }
+const editable = (o: Order) => ({
+  status: o.status,
+  carrier: o.carrier,
+  trackingNumber: o.trackingNumber,
+  shippingNote: o.shippingNote,
+  name: o.name,
+  phone: o.phone,
+  address: o.address,
+  note: o.note || "",
+});
 function OrderEditor({
-  order,
+  order: initial,
   onSave,
   onClose,
 }: {
@@ -160,20 +170,32 @@ function OrderEditor({
   onSave: () => Promise<void>;
   onClose: () => void;
 }) {
-  const [form, setForm] = useState({
-      status: order.status,
-      carrier: order.carrier,
-      trackingNumber: order.trackingNumber,
-      shippingNote: order.shippingNote,
-      name: order.name,
-      phone: order.phone,
-      address: order.address,
-      note: order.note || "",
-      expectedVersion: order.version,
-    }),
+  // The editor keeps the latest server copy, since saves and courier actions change the order version.
+  const [order, setOrder] = useState(initial),
+    [form, setForm] = useState({ ...editable(initial), expectedVersion: initial.version }),
     [error, setError] = useState(""),
-    [busy, setBusy] = useState(false),
-    [savedUpdate, setSavedUpdate] = useState(false);
+    [busy, setBusy] = useState(false);
+  const unsaved = Object.entries(editable(order)).some(
+    ([key, value]) => form[key as keyof typeof form] !== value,
+  );
+  const courierChanged = (state: CourierOrderState) => {
+    setOrder((o) => ({ ...o, ...state }));
+    // Reload the full order so the timeline shows courier events.
+    api<Order[]>("/admin/orders")
+      .then((all) => {
+        const fresh = all.find((o) => o.id === order.id);
+        if (fresh && fresh.version === state.version) setOrder(fresh);
+      })
+      .catch(() => {});
+    // Fields the courier changed are refreshed; other unsaved edits are kept.
+    setForm((f) => ({
+      ...f,
+      status: state.status,
+      carrier: state.carrier,
+      trackingNumber: state.trackingNumber,
+      expectedVersion: state.version,
+    }));
+  };
   return (
     <div className="space-y-6">
       <Button variant="outline" onClick={onClose}>
@@ -196,13 +218,14 @@ function OrderEditor({
           setError("");
           try {
             const { name, phone, address, ...rest } = form;
-            await api("/admin/orders/" + order.id, "PATCH", {
+            const updated = await api<Order>("/admin/orders/" + order.id, "PATCH", {
               ...rest,
               ...(["pending", "pending-payment", "on-hold", "confirmed", "processing"].includes(order.status)
                 ? { name, phone, address }
                 : {}),
             });
-            setSavedUpdate(true);
+            setOrder((o) => ({ ...o, ...updated }));
+            setForm({ ...editable(updated), expectedVersion: updated.version });
             await onSave();
           } catch (e) {
             setError((e as Error).message);
@@ -301,7 +324,7 @@ function OrderEditor({
           {busy ? "Saving…" : "Save order update"}
         </Button>
       </form>
-      <OrderCourier order={{ ...order, ...form }} enabled={savedUpdate} onVersion={version => setForm(f => ({ ...f, expectedVersion: version }))} />
+      <OrderCourier order={order} unsaved={unsaved} onChanged={courierChanged} />
     </div>
   );
 }

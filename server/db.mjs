@@ -30,6 +30,14 @@ export function openDatabase(
     CREATE INDEX IF NOT EXISTS order_user ON orders(user_id);
     INSERT OR IGNORE INTO migrations(version) VALUES(1);
   `);
+  // An earlier category delete cleared these columns without updating the
+  // records; restore them from the stored data so the references are enforced.
+  db.exec(`
+    UPDATE products SET category_id=json_extract(data,'$.categoryId')
+      WHERE category_id IS NULL AND json_extract(data,'$.categoryId') IN (SELECT id FROM categories);
+    UPDATE categories SET parent_id=json_extract(data,'$.parentId')
+      WHERE parent_id IS NULL AND json_extract(data,'$.parentId') IN (SELECT id FROM categories);
+  `);
   return db;
 }
 export function transaction(db, work) {

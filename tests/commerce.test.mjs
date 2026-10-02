@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openDatabase, record, save } from "../server/db.mjs";
+import { openDatabase, record, records, save } from "../server/db.mjs";
 import { seed } from "../server/seed.mjs";
 import { createApp } from "../server/app.mjs";
 import { passwordHash } from "../server/auth.mjs";
@@ -968,4 +968,67 @@ test("admin can remove an incomplete checkout", async (t) => {
     (await admin.call("/admin/incomplete/" + id, "DELETE")).status,
     404,
   );
+});
+test("deleting a category moves its products and promotes subcategories", async (t) => {
+  const { db, admin, guest } = await fixture(t);
+  const del = (id, moveTo) =>
+    admin.call(
+      `/admin/content/categories/${id}${moveTo ? `?moveTo=${moveTo}` : ""}`,
+      "DELETE",
+    );
+  // An empty category is deleted directly.
+  assert.deepEqual((await del("health-care")).data, { ok: true, moved: 0 });
+  assert.equal(record(db, "categories", "health-care"), null);
+  // A subcategory of medicine moves up when medicine is deleted.
+  const herbal = record(db, "categories", "herbal");
+  save(db, "categories", "herbal", { ...herbal, id: undefined, version: undefined, parentId: "medicine" });
+  const section = records(db, "sections")[0];
+  save(db, "sections", section.id, { ...section, categoryIds: ["medicine", "baby-care"] });
+  // Categories with products need a destination.
+  const blocked = await del("medicine");
+  assert.equal(blocked.status, 400);
+  assert.match(blocked.data.error, /Choose another category for the 1 product/);
+  assert.equal((await del("medicine", "medicine")).status, 400);
+  assert.equal((await del("medicine", "missing")).status, 400);
+  assert.ok(record(db, "categories", "medicine"));
+  const deleted = await del("medicine", "baby-care");
+  assert.deepEqual(deleted.data, { ok: true, moved: 1 });
+  assert.equal(record(db, "categories", "medicine"), null);
+  assert.equal(record(db, "products", "vitaboost").categoryId, "baby-care");
+  assert.equal(
+    db.prepare("SELECT category_id FROM products WHERE id='vitaboost'").get().category_id,
+    "baby-care",
+  );
+  assert.equal(record(db, "categories", "herbal").parentId, null);
+  assert.deepEqual(record(db, "sections", section.id).categoryIds, ["baby-care"]);
+  // The moved product stays visible and purchasable.
+  const catalog = (await guest.call("/catalog")).data;
+  assert.equal(catalog.products.find((p) => p.id === "vitaboost").categoryId, "baby-care");
+  assert.equal((await checkout(guest)).status, 201);
+  assert.equal((await del("medicine")).status, 404);
+});
+test("product deletion removes unordered products and protects ordered ones", async (t) => {
+  const { db, admin, guest } = await fixture(t);
+  for (const combo of records(db, "combos"))
+    save(db, "combos", combo.id, { ...combo, productIds: [] });
+  assert.equal((await admin.call("/admin/content/products/hand-sanitizer", "DELETE")).status, 200);
+  assert.equal(record(db, "products", "hand-sanitizer"), null);
+  await checkout(guest);
+  assert.equal((await admin.call("/admin/content/products/vitaboost", "DELETE")).status, 409);
+  assert.ok(record(db, "products", "vitaboost"));
+});
+test("category links cleared by the old delete are restored on startup", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "commerce-links-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const file = join(dir, "store.sqlite");
+  let db = openDatabase(file);
+  seed(db);
+  db.exec("UPDATE products SET category_id=NULL WHERE id='vitaboost'");
+  db.close();
+  db = openDatabase(file);
+  assert.equal(
+    db.prepare("SELECT category_id FROM products WHERE id='vitaboost'").get().category_id,
+    "medicine",
+  );
+  db.close();
 });

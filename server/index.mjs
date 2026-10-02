@@ -22,9 +22,19 @@ const cleanup = setInterval(() => {
   );
 }, 3600000);
 cleanup.unref();
+// Refreshes booked shipments from the courier; each shipment is checked at most every 5 minutes.
+const courierSync = setInterval(
+  () =>
+    app.locals.couriers
+      .tick()
+      .catch((error) => console.error("Courier status sync failed", error)),
+  60000,
+);
+courierSync.unref();
 for (const signal of ["SIGINT", "SIGTERM"])
   process.on(signal, () => {
     clearInterval(cleanup);
+    clearInterval(courierSync);
     server.close(() => {
       db.close();
       process.exit(0);

@@ -12,6 +12,9 @@ const short = z.string().trim().max(200);
 const text = z.string().trim().max(20000);
 const key = z.string().min(1).max(100);
 const money = z.number().int().min(0).max(100000000);
+// SEO meta data; empty values fall back to the record's name and description.
+const metaTitle = z.string().trim().max(200).default("");
+const metaDescription = z.string().trim().max(500).default("");
 const url = z
   .string()
   .max(2000)
@@ -73,6 +76,8 @@ export const schemas = {
       freeDelivery: z.boolean().default(false),
       variants: z.array(variantSchema).min(1).max(50),
       targeting: z.record(z.string().max(2000)).default({}),
+      metaTitle,
+      metaDescription,
     })
     .strict()
     .refine(
@@ -92,6 +97,8 @@ export const schemas = {
       homepage: z.boolean(),
       active: z.boolean(),
       position: z.number().int().min(0).max(1000),
+      metaTitle,
+      metaDescription,
     })
     .strict(),
   sections: z

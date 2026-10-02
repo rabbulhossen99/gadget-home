@@ -280,7 +280,23 @@ export function Content({ kind }: { kind: string }) {
               <Button variant="outline" onClick={() => setEditing(row)}>
                 Edit
               </Button>
-              {remove === row.id ? (
+              {remove === row.id && kind === "categories" ? (
+                <CategoryDelete
+                  category={row}
+                  categories={data}
+                  onCancel={() => setRemove(null)}
+                  onDeleted={async (moved) => {
+                    setRemove(null);
+                    await reload();
+                    await refresh();
+                    notice(
+                      moved
+                        ? `Category deleted. ${moved} product(s) moved.`
+                        : "Category deleted.",
+                    );
+                  }}
+                />
+              ) : remove === row.id ? (
                 <>
                   <span className="text-xs">Delete this record?</span>
                   <Button
@@ -322,6 +338,84 @@ export function Content({ kind }: { kind: string }) {
           )}
         </div>
       )}
+    </div>
+  );
+}
+// Deleting a category moves its products to another category and its
+// subcategories up one level, so nothing disappears from the store.
+function CategoryDelete({
+  category,
+  categories,
+  onCancel,
+  onDeleted,
+}: {
+  category: any;
+  categories: any[];
+  onCancel: () => void;
+  onDeleted: (moved: number) => Promise<void>;
+}) {
+  const { data: products } = useResource<any[]>("/admin/content/products", 0),
+    others = categories.filter((c) => c.id !== category.id),
+    [target, setTarget] = useState(others[0]?.id || ""),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState("");
+  if (!products) return <span className="text-xs">Checking products…</span>;
+  const count = products.filter((p) => p.categoryId === category.id).length,
+    children = categories.filter((c) => c.parentId === category.id).length;
+  return (
+    <div className="w-full space-y-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm">
+      <p className="font-semibold">Delete “{category.name}”?</p>
+      {count > 0 &&
+        (others.length ? (
+          <label className="flex flex-wrap items-center gap-2">
+            Move its {count} product(s) to
+            <select
+              className="field w-auto"
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
+            >
+              {others.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <p>Create another category first to move its {count} product(s).</p>
+        ))}
+      {children > 0 && (
+        <p className="text-muted-foreground">
+          Its {children} subcategor{children === 1 ? "y moves" : "ies move"} up
+          one level.
+        </p>
+      )}
+      {error && <p className="text-destructive">{error}</p>}
+      <div className="flex gap-2">
+        <Button
+          variant="destructive"
+          disabled={busy || (count > 0 && !target)}
+          onClick={async () => {
+            setBusy(true);
+            setError("");
+            try {
+              const result = await api<{ moved: number }>(
+                `/admin/content/categories/${encodeURIComponent(category.id)}${count ? `?moveTo=${encodeURIComponent(target)}` : ""}`,
+                "DELETE",
+              );
+              await onDeleted(result.moved);
+            } catch (e) {
+              setError((e as Error).message);
+              setBusy(false);
+            }
+          }}
+        >
+          {busy ? "Deleting…" : "Delete"}
+        </Button>
+        <Button variant="ghost" onClick={onCancel}>
+          Keep
+        </Button>
+      </div>
     </div>
   );
 }

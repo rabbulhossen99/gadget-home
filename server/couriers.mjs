@@ -51,8 +51,14 @@ export function installCourierTables(db) {
     CREATE INDEX IF NOT EXISTS courier_logs_order ON courier_logs(order_id,created_at);
   `);
 }
-export function courierService(db, adapterFactory = createCourierAdapter) {
+export function courierService(db, { adapterFactory = createCourierAdapter, request } = {}) {
   installCourierTables(db);
+  // Pathao access tokens are reused until they expire instead of signing in on every call.
+  const tokens = new Map();
+  const connect = (provider, config) => {
+    const key = provider + ':' + hash(JSON.stringify(config));
+    return adapterFactory(provider, config, { request, readToken: () => tokens.get(key), writeToken: value => tokens.set(key, value) });
+  };
   function cleanConfig(provider, encrypted) {
     const original = decrypt(provider, encrypted);
     const clean = configSchema.parse(Object.fromEntries(Object.entries(original).filter(([key]) => key in configSchema.shape)));
@@ -89,12 +95,16 @@ export function courierService(db, adapterFactory = createCourierAdapter) {
     const order = db.prepare('SELECT data FROM orders WHERE id=?').get(orderId);
     if (!order) fail('Order not found.', 404);
     const row = db.prepare('SELECT * FROM courier_shipments WHERE order_id=?').get(orderId);
-    return { location: JSON.parse(order.data).courierLocation || null, shipment: row || null, logs: db.prepare('SELECT * FROM courier_logs WHERE order_id=? ORDER BY rowid DESC LIMIT 200').all(orderId) };
+    const data = JSON.parse(order.data), status = db.prepare('SELECT status FROM orders WHERE id=?').get(orderId).status;
+    return { location: data.courierLocation || null, shipment: row || null,
+      // Courier actions change the order, so the admin screen needs its new version and status.
+      order: { version: data.version, status, carrier: data.carrier || '', trackingNumber: data.trackingNumber || '' },
+      logs: db.prepare('SELECT * FROM courier_logs WHERE order_id=? ORDER BY rowid DESC LIMIT 200').all(orderId) };
   }
   const adapter = (provider, enabled = true) => {
     const c = getConfig(provider);
     if (enabled && !c.enabled) fail('Enable this courier in Courier API settings first.');
-    return adapterFactory(provider, c);
+    return connect(provider, c);
   };
   const locationCache = new Map();
   async function locations(provider, districtId = '', zoneId = '', locationType = '') {
@@ -143,7 +153,7 @@ export function courierService(db, adapterFactory = createCourierAdapter) {
     providers.parse(provider);
     const courierConfig = getConfig(provider);
     const api = adapter(provider);
-    let order;
+    let order, prepared;
     transaction(db, () => {
       const row = db.prepare('SELECT * FROM orders WHERE id=?').get(orderId);
       order = orderView(db, row, true);
@@ -154,18 +164,19 @@ export function courierService(db, adapterFactory = createCourierAdapter) {
       if (order.paymentMethod !== 'cod' && order.paymentStatus !== 'paid') fail('This prepaid order has not been verified as paid. Do not ship with zero COD until payment is confirmed.');
       const existing = shipment(orderId).shipment;
       if (existing && existing.state !== 'rejected') fail('This order already has a courier submission. Track or reconcile it instead of submitting again.', 409);
+      prepared = api.prepare(order, {
+        cod: order.paymentMethod === 'cod' ? order.total : 0,
+        weight: courierConfig.defaultWeight || 0.5,
+        deliveryType: 48,
+        instruction: order.note || '',
+      });
       db.prepare(`INSERT INTO courier_shipments(order_id,provider,state) VALUES(?,?,'submitting')
         ON CONFLICT(order_id) DO UPDATE SET provider=excluded.provider,state='submitting',error=NULL,updated_at=CURRENT_TIMESTAMP`).run(orderId, provider);
       log(orderId, 'booking', 'Booking requested with ' + provider);
       audit(db, actor, 'courier.book', orderId);
     });
     try {
-      const result = await api.book(order, {
-        cod: order.paymentMethod === 'cod' ? order.total : 0,
-        weight: courierConfig.defaultWeight || 0.5,
-        deliveryType: 48,
-        instruction: order.note || '',
-      });
+      const result = await api.send(prepared);
       transaction(db, () => {
         db.prepare(`UPDATE courier_shipments SET state='booked',consignment_id=?,tracking_id=?,courier_status=?,
           shipped_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP,next_sync=0,error=NULL WHERE order_id=?`)
@@ -193,7 +204,8 @@ export function courierService(db, adapterFactory = createCourierAdapter) {
     const row = shipment(orderId).shipment;
     try {
       const orderRow = db.prepare('SELECT * FROM orders WHERE id=?').get(orderId);
-      const { status } = await adapter(row.provider).track({ consignmentId: row.consignment_id, orderNumber: orderRow.number });
+      // Existing shipments keep syncing even if the courier is later disabled for new bookings.
+      const { status } = await adapter(row.provider, false).track({ consignmentId: row.consignment_id, orderNumber: orderRow.number });
       transaction(db, () => {
         // Use freshly read state after the external request, never a stale order snapshot.
         const current = db.prepare('SELECT * FROM orders WHERE id=?').get(orderId);
@@ -240,17 +252,24 @@ export function courierService(db, adapterFactory = createCourierAdapter) {
     });
     return shipment(orderId);
   }
-  return { configuration, locations, saveLocation, shipment, book, track, tick, reconcile, test: (p, input = {}) => { providers.parse(p); const overrides = configSchema.partial().parse(input); const config = { ...getConfig(p), ...overrides }; for (const key of secretNames) config[key] = overrides[key] || getConfig(p)[key]; return adapterFactory(p, config).test(); } };
+  return { configuration, locations, saveLocation, shipment, book, track, tick, reconcile, test: (p, input = {}) => { providers.parse(p); const overrides = configSchema.partial().parse(input); const config = { ...getConfig(p), ...overrides }; for (const key of secretNames) config[key] = overrides[key] || getConfig(p)[key]; return connect(p, config).test(); } };
 }
+// Courier statuses that change the order: in progress → processing, needs attention → on-hold.
+// Statuses awaiting courier approval stay in progress until the courier confirms them.
 export function mapCourierStatus(provider, raw) {
   const s = raw.toLowerCase().replaceAll(/[ _-]+/g, '_');
+  if (/_approval_pending$/.test(s)) return 'processing';
+  if (/_return_/.test(s)) return 'on-hold';
   const common = {
     delivered: 'completed', cancelled: 'cancelled', canceled: 'cancelled',
-    hold: 'on-hold', on_hold: 'on-hold', partial_delivered: 'on-hold',
-    returned: 'on-hold', return: 'on-hold', delivery_failed: 'on-hold',
+    hold: 'on-hold', on_hold: 'on-hold', partial_delivered: 'on-hold', partial_delivery: 'on-hold',
+    returned: 'on-hold', return: 'on-hold', delivery_failed: 'on-hold', exceptional: 'on-hold',
+    pickup_failed: 'on-hold', pickup_cancelled: 'on-hold', paid_return: 'on-hold',
     pending: 'processing', in_review: 'processing', picked: 'processing',
     pickup: 'processing', picked_up: 'processing', in_transit: 'processing',
     out_for_delivery: 'processing', delivery_in_progress: 'processing',
+    pickup_requested: 'processing', assigned_for_pickup: 'processing', at_the_sorting_hub: 'processing',
+    received_at_last_mile_hub: 'processing', assigned_for_delivery: 'processing',
   };
   return common[s] || null;
 }

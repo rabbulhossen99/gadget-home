@@ -3,7 +3,7 @@ import helmet from "helmet";
 import { rateLimit } from "express-rate-limit";
 import { z, ZodError } from "zod";
 import { customerExport, anonymizeRequest } from "./privacy.mjs";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { id, records, record, save, transaction, audit } from "./db.mjs";
 import {
@@ -36,6 +36,7 @@ import {
 } from "./auth.mjs";
 import { courierService, mountCourierAdmin } from "./couriers.mjs";
 import { trackingService, mountTracking } from "./tracking.mjs";
+import { renderIndex } from "./seo.mjs";
 
 export function createApp(
   db,
@@ -45,13 +46,15 @@ export function createApp(
     uploadDir = process.env.UPLOAD_DIR || "./uploads",
     staticDir = "./dist",
     limits = true,
+    trackingFetch = globalThis.fetch,
+    courierRequest,
   } = {},
 ) {
   const app = express();
 app.set('trust proxy', 1);
 
-  const couriers = courierService(db);
-  const tracking = trackingService(db);
+  const couriers = courierService(db, { request: courierRequest });
+  const tracking = trackingService(db, { origin, fetch: trackingFetch });
   app.disable("x-powered-by");
   app.use(
     helmet({
@@ -59,10 +62,18 @@ app.set('trust proxy', 1);
         ? {
             directives: {
               defaultSrc: ["'self'"],
-              scriptSrc: ["'self'"],
+              // Meta Pixel loads fbevents.js and reports to facebook.com.
+              scriptSrc: ["'self'", "https://connect.facebook.net"],
               styleSrc: ["'self'", "'unsafe-inline'"],
               imgSrc: ["'self'", "https:", "data:", "blob:"],
-              connectSrc: ["'self'"],
+              connectSrc: [
+                "'self'",
+                "https://connect.facebook.net",
+                "https://www.facebook.com",
+              ],
+              // Large pixel payloads are posted through a hidden iframe form.
+              formAction: ["'self'", "https://www.facebook.com"],
+              frameSrc: ["https://www.facebook.com"],
               fontSrc: ["'self'"],
               objectSrc: ["'none'"],
               frameAncestors: ["'none'"],
@@ -278,10 +289,13 @@ app.set('trust proxy', 1);
   app.post(
     "/api/orders",
     rateLimit({ windowMs: 60000, limit: 10, skip: () => !limits }),
-    (req, res) =>
-      res
-        .status(201)
-        .json(placeOrder(db, req.session, checkoutSchema.parse(req.body))),
+    (req, res) => {
+      const { tracking: context, ...input } = req.body ?? {};
+      const order = placeOrder(db, req.session, checkoutSchema.parse(input));
+      // Only newly placed orders carry a tracking token; repeated submissions are not reported again.
+      if (order.trackingToken) tracking.purchase(order, req, context);
+      res.status(201).json(order);
+    },
   );
   app.get("/api/orders", (req, res) => {
     const rows = db
@@ -414,7 +428,10 @@ app.set('trust proxy', 1);
         .prepare("SELECT * FROM orders ORDER BY created_at DESC")
         .all()
         .filter((o) => !status || o.status === status)
-        .map((o) => orderView(db, o, true))
+        .map((o) => ({
+          ...orderView(db, o, true),
+          courierShipment: couriers.shipment(o.id).shipment,
+        }))
         .filter((o) =>
           `${o.number} ${o.name} ${o.phone} ${o.email}`
             .toLowerCase()
@@ -625,41 +642,44 @@ app.set('trust proxy', 1);
       key = req.params.id;
     if (!schemas[kind] || kind === "settings")
       fail("This resource cannot be deleted.");
-    transaction(db, () => {
+    const moved = transaction(db, () => {
+      const current = record(db, kind, key);
+      if (!current) fail("This record no longer exists.", 404);
       if (
         kind === "products" &&
         records(db, "combos").some((c) => c.productIds.includes(key))
       )
         fail("Remove this product from combos first.");
+      let moved = 0;
       if (kind === "categories") {
-  db.prepare(`
-    UPDATE products
-    SET category_id=NULL
-    WHERE category_id=?
-  `).run(key);
-
-  db.prepare(`
-    UPDATE categories
-    SET parent_id=NULL
-    WHERE parent_id=?
-  `).run(key);
-
-  for (const s of records(db, "sections")) {
-  s.categoryIds = (s.categoryIds || []).filter(
-    (v) => v !== key
-  );
-  save(db, "sections", s.id, s);
-}
-
-  db.prepare(`
-    DELETE FROM products WHERE id=?
-  `).run(key);
-
-} else {
-
-  db.prepare("DELETE FROM content WHERE kind=? AND id=?").run(kind, key);
-
-}
+        // Products move to the category chosen by the administrator, and
+        // subcategories move up to the deleted category's parent.
+        const contents = records(db, "products").filter(
+            (p) => p.categoryId === key,
+          ),
+          moveTo = String(req.query.moveTo || "");
+        if (contents.length) {
+          if (!moveTo || moveTo === key || !record(db, "categories", moveTo))
+            fail(
+              `Choose another category for the ${contents.length} product(s) in ${current.name}.`,
+            );
+          for (const { id: productId, version, ...product } of contents)
+            save(db, "products", productId, { ...product, categoryId: moveTo });
+          moved = contents.length;
+        }
+        for (const { id: childId, version, ...child } of records(
+          db,
+          "categories",
+        ).filter((c) => c.parentId === key))
+          save(db, "categories", childId, {
+            ...child,
+            parentId: current.parentId || null,
+          });
+        db.prepare("DELETE FROM categories WHERE id=?").run(key);
+      } else if (kind === "products")
+        db.prepare("DELETE FROM products WHERE id=?").run(key);
+      else
+        db.prepare("DELETE FROM content WHERE kind=? AND id=?").run(kind, key);
       if (["products", "categories"].includes(kind))
         for (const s of records(db, "sections")) {
           s.productIds = s.productIds.filter(
@@ -671,8 +691,9 @@ app.set('trust proxy', 1);
           save(db, "sections", s.id, s);
         }
       audit(db, req.user.id, `${kind}.delete`, key);
+      return moved;
     });
-    res.json({ ok: true });
+    res.json({ ok: true, moved });
   });
   app.use("/api", (_, res) =>
     res.status(404).json({ error: "API endpoint not found." }),
@@ -688,11 +709,15 @@ app.set('trust proxy', 1);
     }),
   );
   app.use(express.static(resolve(staticDir), { dotfiles: "deny" }));
-  app.get("/{*path}", (_, res, next) =>
-    res.sendFile(resolve(staticDir, "index.html"), (error) => {
-      if (error) next(error);
-    }),
-  );
+  app.get("/{*path}", (req, res, next) => {
+    let html;
+    try {
+      html = readFileSync(resolve(staticDir, "index.html"), "utf8");
+    } catch (error) {
+      return next(error);
+    }
+    res.type("html").send(renderIndex(db, req.path, html, origin));
+  });
   app.use((error, req, res, next) => {
     if (res.headersSent) return next(error);
     if (error instanceof ZodError)

@@ -10,6 +10,8 @@ import {
 } from "react-router-dom";
 import { StoreProvider, useStore } from "./lib/store";
 import { StoreLayout } from "./components/shared";
+import { applySeo } from "./lib/seo";
+import { initTracking, track, useTracking } from "./lib/tracking";
 import { Home, Shop } from "./pages/Home";
 import { Product } from "./pages/Product";
 import { Cart, Checkout, OrderSuccess, Track } from "./pages/Checkout";
@@ -55,11 +57,62 @@ function Scroll() {
     } else window.scrollTo(0, 0);
   }, [pathname, hash]);
   useEffect(() => {
+    const store = catalog.settings.name;
+    if (pathname.startsWith("/admin")) {
+      applySeo(store, null);
+      document.title = `Admin · ${store}`;
+      return;
+    }
     const product = catalog.products.find(
-      (p) => pathname === "/product/" + p.slug,
+        (p) => pathname === "/product/" + p.slug,
+      ),
+      category = catalog.categories.find(
+        (c) => pathname === "/category/" + c.slug,
+      );
+    applySeo(
+      store,
+      product
+        ? {
+            title: product.metaTitle || product.name,
+            description:
+              product.metaDescription || product.detail || product.description,
+            image: product.images[0],
+            type: "product",
+            price: product.variants[0] ? product.variants[0].price / 100 : null,
+          }
+        : category
+          ? {
+              title: category.metaTitle || category.name,
+              description: category.metaDescription,
+              image: category.image,
+              type: "website",
+            }
+          : null,
     );
-    document.title = `${pathname.startsWith("/admin") ? "Admin · " : product ? product.name + " · " : ""}${catalog.settings.name}`;
-  }, [pathname, hash, catalog.settings.name, catalog.products]);
+  }, [
+    pathname,
+    hash,
+    catalog.settings.name,
+    catalog.products,
+    catalog.categories,
+  ]);
+  return null;
+}
+let trackingStarted = false;
+function PageTracking() {
+  const { user } = useStore(),
+    { pathname } = useLocation(),
+    { active } = useTracking(),
+    admin = pathname.startsWith("/admin");
+  useEffect(() => {
+    // The storefront pixel is never loaded for administration pages.
+    if (admin || trackingStarted) return;
+    trackingStarted = true;
+    void initTracking(user);
+  }, [admin, user]);
+  useEffect(() => {
+    if (!admin && active) track("PageView");
+  }, [pathname, admin, active]);
   return null;
 }
 createRoot(document.getElementById("root")!).render(
@@ -67,6 +120,7 @@ createRoot(document.getElementById("root")!).render(
     <BrowserRouter>
       <StoreProvider>
         <Scroll />
+        <PageTracking />
         <Routes>
           <Route element={<StoreLayout />}>
             <Route index element={<Home />} />

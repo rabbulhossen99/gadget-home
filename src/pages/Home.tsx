@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useSearchParams, useParams, useNavigate } from "react-router-dom";
 import {
   Baby,
@@ -11,6 +11,7 @@ import {
   Check,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
+import { track, useTracking } from "@/lib/tracking";
 import { money } from "@/lib/api";
 import type { Combo, Product, Section } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -353,7 +354,18 @@ export function Shop() {
     { slug } = useParams(),
     [sort, setSort] = useState("name");
   const category = catalog.categories.find((c) => c.slug === slug),
-    q = params.get("q") || "";
+    q = params.get("q") || "",
+    { active } = useTracking();
+  useEffect(() => {
+    const term = q.trim();
+    if (!active || !term) return;
+    // Wait until typing pauses so each search is reported once.
+    const timer = setTimeout(
+      () => track("Search", { search_string: term.slice(0, 200) }),
+      800,
+    );
+    return () => clearTimeout(timer);
+  }, [q, active]);
   const ids = new Set(category ? [category.id] : []);
   let previous = 0;
   while (ids.size !== previous) {

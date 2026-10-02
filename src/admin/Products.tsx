@@ -50,6 +50,8 @@ export function Products() {
               freeDelivery: false,
               variants: [variant()],
               targeting: {},
+              metaTitle: "",
+              metaDescription: "",
             })
           }
         >
@@ -490,14 +492,43 @@ function ProductEditor({
           Add attribute
         </Button>
       </section>
+      <section className="panel">
+        <h2 className="mb-1 text-lg font-bold">SEO</h2>
+        <p className="mb-4 text-sm text-muted-foreground">
+          Used for the page title, search results and link previews on
+          Facebook, Instagram and WhatsApp. Leave empty to use the product name
+          and short description.
+        </p>
+        <div className="space-y-5">
+          <Field label="Meta title">
+            <input
+              className="field"
+              maxLength={200}
+              placeholder={form.name}
+              value={form.metaTitle || ""}
+              onChange={(e) => set("metaTitle", e.target.value)}
+            />
+          </Field>
+          <Field label="Meta description">
+            <textarea
+              className="field"
+              rows={4}
+              maxLength={500}
+              placeholder={form.detail}
+              value={form.metaDescription || ""}
+              onChange={(e) => set("metaDescription", e.target.value)}
+            />
+          </Field>
+        </div>
+      </section>
       <details className="panel">
         <summary className="cursor-pointer font-bold">
           Meta targeting & conversion planning
         </summary>
         <p className="my-4 text-sm text-muted-foreground">
-          Stores campaign metadata and generates a snippet for your advertising
-          team. This website does not load Meta tracking or forward customer
-          data.
+          Campaign planning metadata and a snippet for your advertising team.
+          Store-wide Meta Pixel and Conversions API events are configured under
+          Tracking; these fields are not sent to Meta.
         </p>
         <div className="grid gap-4 sm:grid-cols-3">
           {[

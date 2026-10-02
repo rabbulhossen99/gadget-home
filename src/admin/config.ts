@@ -43,6 +43,17 @@ export const configs: Record<
       { key: "homepage", label: "Show on homepage", type: "checkbox" },
       active,
       { key: "position", label: "Display order", type: "number" },
+      {
+        key: "metaTitle",
+        label: "Meta title",
+        hint: "SEO title for search results and link previews. Defaults to the name.",
+      },
+      {
+        key: "metaDescription",
+        label: "Meta description",
+        type: "textarea",
+        hint: "SEO description for search results and link previews.",
+      },
     ],
     defaults: {
       name: "",
@@ -52,6 +63,8 @@ export const configs: Record<
       homepage: true,
       active: true,
       position: 0,
+      metaTitle: "",
+      metaDescription: "",
     },
   },
   sections: {
