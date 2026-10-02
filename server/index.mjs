@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { openDatabase } from "./db.mjs";
 import { createApp } from "./app.mjs";
 const production = process.env.NODE_ENV === "production";
