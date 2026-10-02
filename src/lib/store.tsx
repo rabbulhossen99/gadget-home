@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { api, setCsrf } from "./api";
+import { cartData, track } from "./tracking";
 import type { Catalog, CartItem, User } from "./types";
 type Store = {
   catalog: Catalog;
@@ -93,6 +94,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (existing) existing.quantity += item.quantity;
         else next.push(item);
         await setCart(next);
+        if (catalog) track("AddToCart", () => cartData([item], catalog));
         notice("Added to your cart");
       });
     queue.current = task;

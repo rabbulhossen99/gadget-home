@@ -1,4 +1,4 @@
-import { useState, type MouseEvent } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import {
   ChevronRight,
@@ -9,6 +9,7 @@ import {
   ZoomIn,
 } from "lucide-react";
 import { useStore, useResource } from "@/lib/store";
+import { track, useTracking } from "@/lib/tracking";
 import { api, money } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Empty, ErrorBox, ProductCard } from "@/components/shared";
@@ -43,7 +44,21 @@ function ProductDetails({ product: p }: { product: ProductType }) {
     { id: string; name: string; rating: number; comment: string }[]
   >("/products/" + p.id + "/reviews");
   const v = p.variants.find((v) => v.id === selected),
-    category = catalog.categories.find((c) => c.id === p.categoryId);
+    category = catalog.categories.find((c) => c.id === p.categoryId),
+    { active } = useTracking();
+  useEffect(() => {
+    const first = p.variants[0];
+    if (!active || !first) return;
+    track("ViewContent", {
+      content_ids: [p.id],
+      content_name: p.name,
+      content_category: category?.name,
+      content_type: "product",
+      contents: [{ id: p.id, quantity: 1, item_price: first.price / 100 }],
+      value: first.price / 100,
+      currency: "BDT",
+    });
+  }, [p.id, active]);
   async function buy(checkout = false) {
     if (!v) return;
     setBusy(true);

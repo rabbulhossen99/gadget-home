@@ -1,7 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { CheckCircle2, PackageCheck, Trash2 } from "lucide-react";
 import { useStore, useResource } from "@/lib/store";
+import {
+  cartData,
+  orderData,
+  track,
+  trackingConsent,
+  useTracking,
+} from "@/lib/tracking";
 import { api, money } from "@/lib/api";
 import type { Order, Quote } from "@/lib/types";
 import { Field, ErrorBox, Empty } from "@/components/shared";
@@ -227,6 +234,16 @@ export function Checkout() {
     }, 300);
     return () => clearTimeout(timer);
   }, [name, phone, address, cart, key, busy]);
+  const { active } = useTracking(),
+    initiated = useRef(false);
+  useEffect(() => {
+    if (!active || !quote || !cart.length || initiated.current) return;
+    initiated.current = true;
+    track("InitiateCheckout", () => ({
+      ...cartData(cart, catalog),
+      value: quote.total / 100,
+    }));
+  }, [active, quote]);
   if (!cart.length)
     return (
       <main className="p-12">
@@ -249,6 +266,10 @@ export function Checkout() {
           const form = new FormData(e.currentTarget);
           setBusy(true);
           setError("");
+          track("AddPaymentInfo", () => ({
+            ...cartData(cart, catalog),
+            value: quote.total / 100,
+          }));
           try {
             const order = await api<Order>("/orders", "POST", {
               name,
@@ -262,7 +283,10 @@ export function Checkout() {
               paymentReference: form.get("paymentReference") || "",
               idempotencyKey: key,
               expectedTotal: quote.total,
+              tracking: { consent: trackingConsent(), sourceUrl: location.href },
             });
+            // Same event ID as the server-side Purchase, so Meta counts it once.
+            track("Purchase", () => orderData(order), `purchase_${order.id}`);
             if (order.trackingToken)
               sessionStorage.setItem(
                 "tracking:" + order.id,

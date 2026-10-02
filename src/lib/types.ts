@@ -24,6 +24,8 @@ export type Product = {
   freeDelivery: boolean;
   variants: Variant[];
   targeting?: Record<string, string>;
+  metaTitle?: string;
+  metaDescription?: string;
 };
 export type Category = {
   id: string;
@@ -35,6 +37,8 @@ export type Category = {
   homepage: boolean;
   active: boolean;
   position: number;
+  metaTitle?: string;
+  metaDescription?: string;
 };
 export type Section = {
   id: string;

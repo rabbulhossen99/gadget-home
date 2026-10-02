@@ -16,6 +16,19 @@ const errors = {
   422: 'Courier validation failed. Check recipient, phone, address, location, weight and COD.',
   429: 'Courier rate limit reached. Wait before retrying.',
 };
+// Field limits from the couriers' merchant API documentation.
+const limits = {
+  steadfast: { name: [1, 100], address: [1, 250], note: 480 },
+  pathao: { name: [3, 100], address: [10, 220], note: 255 },
+};
+const clip = (text, max) => text.length > max ? text.slice(0, max - 1) + '…' : text;
+// Appends the thana and district when they fit and are not already part of the address.
+function deliveryAddress(order, max) {
+  const base = String(order.address || '').trim().replace(/\s+/g, ' ');
+  const extra = [order.thana, order.district].filter(x => x && !base.toLowerCase().includes(String(x).toLowerCase()));
+  const full = [base, ...extra].join(', ');
+  return full.length <= max ? full : base.length <= max ? base : null;
+}
 export function createCourierAdapter(provider, config, context = {}) {
   const request = context.request || fetch;
   const base = provider === 'steadfast' ? 'https://portal.packzy.com/api/v1'
@@ -39,7 +52,7 @@ export function createCourierAdapter(provider, config, context = {}) {
     context.log?.(path, code, authRequest ? {} : safeResponse(data?.data || data?.consignment || data), bad ? (errors[code] || 'Courier unavailable.') : '');
     if (bad) {
       const fields = data?.errors && typeof data.errors === 'object' ? Object.keys(data.errors).filter(k =>
-        /^(recipient_(name|phone|address|city|zone|area)|item_(weight|quantity)|amount_to_collect|cod_amount|store_id)$/.test(k)) : [];
+        /^(recipient_(name|phone|address|city|zone|area)|item_(weight|quantity|description|type)|amount_to_collect|cod_amount|store_id|invoice|merchant_order_id|note|special_instruction|delivery_type)$/.test(k)) : [];
       throw courierError((errors[code] || 'Courier service unavailable. Retry status checks later.') +
         (fields.length ? ' Fields: ' + fields.join(', ') + '.' : ''), authRequest || [400,401,403,422,429].includes(code), code);
     }
@@ -103,25 +116,35 @@ export function createCourierAdapter(provider, config, context = {}) {
         recipient_city: Number(order.courierLocation.districtId), recipient_zone: Number(order.courierLocation.thanaId),
       })).data);
     },
-    async book(order, options) {
-      const address = [order.address, order.district, order.thana].filter(Boolean).join(', ');
-      const description = order.lines.map(x => x.name + ' x' + x.quantity + ' (' + (x.total / 100).toFixed(2) + ' BDT)').join('; ');
-      const note = [options.instruction, order.note, order.shippingNote,
-        'Delivery: ' + (order.shipping / 100).toFixed(2) + ' BDT; Total: ' + (order.total / 100).toFixed(2) + ' BDT'].filter(Boolean).join('; ');
-      if (provider === 'steadfast') return booking(await json('/create_order', {
-        invoice: order.number, recipient_name: order.name, recipient_phone: order.phone,
-        recipient_address: address, cod_amount: options.cod / 100, note: description + '; ' + note,
-      }));
+    // Builds the booking request and checks it against the courier's documented field limits,
+    // so invalid orders are rejected here instead of after submission.
+    prepare(order, options) {
+      const name = provider === 'pathao' ? 'Pathao' : 'Steadfast', limit = limits[provider];
+      const recipient = String(order.name || '').trim(), phone = String(order.phone || '').trim();
+      if (recipient.length < limit.name[0] || recipient.length > limit.name[1])
+        fail(`${name} needs a recipient name of ${limit.name[0]}–${limit.name[1]} characters. Edit the order first.`);
+      if (!/^01[0-9]{9}$/.test(phone)) fail(`${name} needs an 11-digit mobile number starting with 01. Edit the order first.`);
+      const address = deliveryAddress(order, limit.address[1]);
+      if (!address) fail(`The delivery address is longer than ${name}'s limit of ${limit.address[1]} characters. Shorten it in the order first.`);
+      if (address.length < limit.address[0]) fail(`${name} needs a delivery address of at least ${limit.address[0]} characters. Edit the order first.`);
+      const description = clip(order.lines.map(x => x.name + ' x' + x.quantity).join('; '), 255);
+      const note = clip([options.instruction, order.shippingNote].filter(Boolean).join('; '), limit.note);
+      if (provider === 'steadfast') return { path: '/create_order', body: {
+        invoice: order.number, recipient_name: recipient, recipient_phone: phone, recipient_address: address,
+        cod_amount: options.cod / 100, item_description: description, ...(note ? { note } : {}),
+      } };
       const loc = order.courierLocation;
-      return booking(await json('/aladdin/api/v1/orders', {
-        store_id: config.storeId, merchant_order_id: order.number, recipient_name: order.name,
-        recipient_phone: order.phone, recipient_address: address, recipient_city: Number(loc.districtId), recipient_zone: Number(loc.thanaId),
+      return { path: '/aladdin/api/v1/orders', body: {
+        store_id: config.storeId, merchant_order_id: order.number, recipient_name: recipient,
+        recipient_phone: phone, recipient_address: address, recipient_city: Number(loc.districtId), recipient_zone: Number(loc.thanaId),
         ...(loc.areaId ? { recipient_area: Number(loc.areaId) } : {}),
         delivery_type: options.deliveryType, item_type: 2, item_weight: options.weight,
         item_quantity: order.lines.reduce((n,x) => n + x.quantity * (x.components?.length || 1), 0),
-        item_description: description, special_instruction: note, amount_to_collect: options.cod / 100,
-      }));
+        item_description: description, ...(note ? { special_instruction: note } : {}), amount_to_collect: options.cod / 100,
+      } };
     },
+    async send(prepared) { return booking(await json(prepared.path, prepared.body)); },
+    async book(order, options) { return this.send(this.prepare(order, options)); },
     async track(s) {
       const response = provider === 'pathao' ? await json('/aladdin/api/v1/orders/' + encodeURIComponent(s.consignmentId) + '/info')
         : await json('/status_by_cid/' + encodeURIComponent(s.consignmentId));

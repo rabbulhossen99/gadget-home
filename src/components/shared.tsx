@@ -2,6 +2,7 @@ import { Link, Outlet, useNavigate } from "react-router-dom";
 import { useState, type ReactNode } from "react";
 import { Menu, Search, ShoppingBag, X } from "lucide-react";
 import { useStore } from "@/lib/store";
+import { setConsent, useTracking } from "@/lib/tracking";
 import { money } from "@/lib/api";
 import type { Product } from "@/lib/types";
 import { Button } from "./ui/button";
@@ -11,9 +12,10 @@ export function StoreLayout() {
     [query, setQuery] = useState(""),
     navigate = useNavigate();
   const settings = catalog.settings;
-  const [consent, setConsent] = useState(
-    () => localStorage.getItem("essential-notice") === "1",
-  );
+  const [noticed, setNoticed] = useState(
+      () => localStorage.getItem("essential-notice") === "1",
+    ),
+    tracking = useTracking();
   return (
     <div className="min-h-screen bg-background text-foreground">
       {settings.announcement && (
@@ -122,6 +124,15 @@ export function StoreLayout() {
               </Link>
             ))}
             <Link to="/track">Track order</Link>
+            {tracking.needsConsent && tracking.consent && (
+              <button
+                type="button"
+                className="mt-2 block text-sm text-background/70"
+                onClick={() => setConsent(null)}
+              >
+                Cookie preferences
+              </button>
+            )}
           </div>
           <div>
             <h3 className="mb-3 font-bold">Payment</h3>
@@ -136,26 +147,49 @@ export function StoreLayout() {
           © {new Date().getFullYear()} {settings.name}
         </p>
       </footer>
-      {settings.cookieBanner && !consent && (
+      {tracking.needsConsent && !tracking.consent ? (
         <div className="fixed bottom-3 left-3 z-50 max-w-sm rounded-2xl border bg-card p-4 text-sm shadow-lg">
           <p>
-            We use essential cookies for your cart and sign-in. No advertising
-            trackers are loaded.
+            We use essential cookies for your cart and sign-in. With your
+            permission, we also use the Meta Pixel to measure our advertising.
           </p>
-          <div className="mt-3 flex items-center justify-between">
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
             <Link to="/policy/privacy" className="underline">
               Privacy policy
             </Link>
-            <Button
-              onClick={() => {
-                localStorage.setItem("essential-notice", "1");
-                setConsent(true);
-              }}
-            >
-              Got it
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setConsent("denied")}>
+                Essential only
+              </Button>
+              <Button onClick={() => setConsent("granted")}>Accept</Button>
+            </div>
           </div>
         </div>
+      ) : (
+        settings.cookieBanner &&
+        !noticed &&
+        !tracking.needsConsent && (
+          <div className="fixed bottom-3 left-3 z-50 max-w-sm rounded-2xl border bg-card p-4 text-sm shadow-lg">
+            <p>
+              {tracking.pixel
+                ? "We use cookies for your cart and sign-in, and the Meta Pixel to measure our advertising."
+                : "We use essential cookies for your cart and sign-in. No advertising trackers are loaded."}
+            </p>
+            <div className="mt-3 flex items-center justify-between">
+              <Link to="/policy/privacy" className="underline">
+                Privacy policy
+              </Link>
+              <Button
+                onClick={() => {
+                  localStorage.setItem("essential-notice", "1");
+                  setNoticed(true);
+                }}
+              >
+                Got it
+              </Button>
+            </div>
+          </div>
+        )
       )}
     </div>
   );
