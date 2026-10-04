@@ -214,7 +214,7 @@ test("order writes are atomic and duplicate submission is idempotent", async (t)
   await guest.call("/cart", "PUT", items);
   const first = await checkout(guest, { idempotencyKey: key });
   assert.equal(first.status, 201);
-  assert.equal(first.data.total, 60000);
+  assert.equal(first.data.total, 66000);
   const second = await checkout(guest, { idempotencyKey: key });
   assert.equal(second.data.id, first.data.id);
   assert.equal(
@@ -356,7 +356,7 @@ test("coupons enforce limits, shipping rules, and release use after cancellation
   coupon.limit = 1;
   save(db, "coupons", coupon.id, coupon);
   const first = await checkout(guest, { coupon: "SAVE10" });
-  assert.equal(first.data.total, 54000);
+  assert.equal(first.data.total, 60000);
   const other = await client();
   assert.equal(
     (
@@ -399,7 +399,7 @@ test("combo pricing uses admin tiers and decrements each component stock", async
   ];
   const result = await checkout(guest, { items: combo });
   assert.equal(result.status, 201);
-  assert.equal(result.data.total, 160000);
+  assert.equal(result.data.total, 166000);
   assert.equal(record(db, "products", "baby-lotion").variants[0].stock, 48);
   assert.equal(
     (

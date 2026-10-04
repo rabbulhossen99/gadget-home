@@ -43,23 +43,23 @@ function useQuote(area: string, coupon: string) {
   }, [body, catalog]);
   return { quote, error, loading };
 }
-export function Totals({ quote }: { quote: Quote }) {
+export function Totals({ quote, checkout = false }: { quote: Quote; checkout?: boolean }) {
   return (
     <dl className="space-y-3 text-sm">
       <div className="flex justify-between">
         <dt>Subtotal</dt>
         <dd>{money(quote.subtotal)}</dd>
       </div>
-      {!quote.freeDelivery && (
+      {(checkout || !quote.freeDelivery) && (
         <div className="flex justify-between">
           <dt>Shipping</dt>
           <dd>{quote.shipping ? money(quote.shipping) : "Free"}</dd>
         </div>
       )}
-      <div className="flex justify-between">
+      {!checkout && <div className="flex justify-between">
         <dt>Discount</dt>
         <dd>−{money(quote.discount)}</dd>
-      </div>
+      </div>}
       <div className="flex justify-between border-t pt-4 text-xl font-bold">
         <dt>Total</dt>
         <dd>{money(quote.total)}</dd>
@@ -343,7 +343,7 @@ export function Checkout() {
               onChange={(e) => setAddress(e.target.value)}
             />
           </Field>
-          <fieldset>
+          {quote && !quote.freeDelivery && <fieldset>
             <legend className="mb-2 text-sm font-semibold">
               Delivery area
             </legend>
@@ -375,7 +375,7 @@ export function Checkout() {
                 </label>
               ))}
             </div>
-          </fieldset>
+          </fieldset>}
           <div className="flex gap-2">
             <input
               value={coupon}
@@ -476,7 +476,7 @@ export function Checkout() {
               </div>
             </div>
           ))}
-          {quote && <Totals quote={quote} />}
+          {quote && <Totals quote={quote} checkout />}
           <Button
             type="submit"
             variant="shop"
