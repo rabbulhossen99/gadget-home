@@ -93,16 +93,16 @@ export function quote(db, input) {
     }
   }
   const subtotal = lines.reduce((sum, line) => sum + line.total, 0);
-  let shipping =
-    config.freeShippingThreshold !== null &&
-    subtotal >= config.freeShippingThreshold
-      ? 0
-      : input.area === "inside"
-        ? config.shippingInside
-        : config.shippingOutside;
   const freeDelivery =
     lines.length > 0 && lines.every((line) => line.freeDelivery);
-  if (freeDelivery) shipping = 0;
+  // Product-level eligibility is the source of truth for checkout delivery.
+  // Any chargeable line requires the selected area fee; only an all-free cart
+  // receives zero shipping.
+  const shipping = freeDelivery
+    ? 0
+    : input.area === "inside"
+      ? config.shippingInside
+      : config.shippingOutside;
   let discount = 0,
     couponId = null;
   if (input.coupon) {
