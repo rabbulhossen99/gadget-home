@@ -33,8 +33,10 @@ export function Orders() {
     [status, setStatus] = useState(""),
     [selected, setSelected] = useState<Order | null>(null),
     { notice } = useStore();
+  const ordered = [...(data || [])].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const serials = new Map(ordered.map((order, index) => [order.id, String(index + 1).padStart(2, "0")]));
   const orders =
-    data?.filter(
+    [...ordered].reverse().filter(
       (o) =>
         (!status || o.status === status) &&
         `${o.number} ${o.name} ${o.phone} ${o.email}`
@@ -116,6 +118,7 @@ export function Orders() {
             <table>
               <thead>
                 <tr>
+                  <th>Order No.</th>
                   <th>Order</th>
                   <th>Customer</th>
                   <th>Status</th>
@@ -127,6 +130,7 @@ export function Orders() {
               <tbody>
                 {orders.map((o) => (
                   <tr key={o.id}>
+                    <td><strong>{serials.get(o.id)}</strong></td>
                     <td>
                       <strong>{o.number}</strong>
                       <p className="text-xs text-muted-foreground">
