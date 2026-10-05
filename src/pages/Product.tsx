@@ -233,8 +233,9 @@ function ProductDetails({ product: p }: { product: ProductType }) {
               </Button>
             </div>
             <Button
+              variant="buyNow"
               size="shop"
-              className="mt-3 w-full bg-coral text-white"
+              className="mt-3 w-full"
               disabled={busy || !v?.stock}
               onClick={() => buy(true)}
             >
@@ -378,7 +379,8 @@ function ProductDetails({ product: p }: { product: ProductType }) {
           Add to cart
         </Button>
         <Button
-          className="flex-1 bg-coral text-white"
+          variant="buyNow"
+          className="flex-1"
           disabled={busy || !v?.stock}
           onClick={() => buy(true)}
         >

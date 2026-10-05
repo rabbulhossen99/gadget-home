@@ -14,6 +14,8 @@ const buttonVariants = cva(
         shop: "rounded-full bg-foreground text-background shadow-[0_5px_0_var(--button-shadow)] hover:bg-foreground/90 active:translate-y-1 active:shadow-none",
         shopOutline:
           "rounded-full border-2 border-foreground bg-card text-foreground hover:bg-secondary",
+        buyNow:
+          "rounded-full border-0 bg-[#F59E0B] text-white transition-colors duration-200 hover:bg-[#D97706] hover:text-white",
         package:
           "rounded-full bg-primary/15 text-primary hover:bg-primary hover:text-primary-foreground",
         destructive:

@@ -260,9 +260,9 @@ export function ProductCard({ product }: { product: Product }) {
             {!v.stock ? "Out of stock" : busy ? "Adding…" : "Add to cart"}
           </Button>
           <Button
-            variant="shopOutline"
+            variant="buyNow"
             size="sm"
-            className="h-11 w-full px-2 text-xs sm:px-3 sm:text-sm"
+            className="h-11 w-full border-0 bg-[#F59E0B] px-2 text-xs font-medium text-white transition-colors duration-200 hover:bg-[#D97706] hover:text-white sm:px-3 sm:text-sm"
             disabled={busy || !v.stock}
             onClick={async () => {
               setBusy(true);

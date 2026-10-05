@@ -79,7 +79,7 @@ function HomeSection({ section: s }: { section: Section }) {
               {s.type === "hero" && (
                 <Button variant="shopOutline" size="shop" asChild>
                   <a href="#packages">
-                    <PackageCheck /> প্যাকেজ দেখুন
+                    <PackageCheck /> Explore Package
                   </a>
                 </Button>
               )}
@@ -177,6 +177,7 @@ function HomeSection({ section: s }: { section: Section }) {
 function Packages({ product: p }: { product: Product }) {
   const [selected, setSelected] = useState(p.variants[0]?.id),
     { add, notice } = useStore(),
+    navigate = useNavigate(),
     [busy, setBusy] = useState(false);
   const chosen = p.variants.find((v) => v.id === selected);
   return (
@@ -217,8 +218,9 @@ function Packages({ product: p }: { product: Product }) {
       </div>
       <div className="mt-6 text-center">
         <Button
-          variant="shopOutline"
+          variant="buyNow"
           size="shop"
+          className="bg-[#F59E0B] text-white transition-colors duration-200 hover:bg-[#D97706] hover:text-white"
           disabled={busy || !chosen?.stock}
           onClick={async () => {
             if (!chosen) return;
@@ -230,6 +232,7 @@ function Packages({ product: p }: { product: Product }) {
                 variantId: chosen.id,
                 quantity: 1,
               });
+              navigate("/checkout");
             } catch (e) {
               notice((e as Error).message);
             } finally {
@@ -237,7 +240,7 @@ function Packages({ product: p }: { product: Product }) {
             }
           }}
         >
-          Add {chosen?.name || "package"} to cart
+          Buy Now - {chosen?.name || "Package"}
         </Button>
       </div>
     </div>
@@ -317,7 +320,7 @@ function ComboBuilder({ combo }: { combo: Combo }) {
       </div>
       <div className="mt-7 flex justify-center">
       <Button
-        variant="shop"
+        variant="buyNow"
         size="shop"
         className="min-w-44"
         disabled={busy || !tier}

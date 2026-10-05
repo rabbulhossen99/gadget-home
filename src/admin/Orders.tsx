@@ -18,6 +18,13 @@ const transitions: Record<string, string[]> = {
 };
 const statusLabels: Record<string, string> = { "on-hold": "On Hold", "pending-payment": "Pending Payment" };
 const label = (s: string) => statusLabels[s] || s.replace(/^./, (c) => c.toUpperCase());
+const statusTone = (status: string) => ({
+  pending: "border-amber-200 bg-amber-100 text-amber-800",
+  processing: "border-blue-200 bg-blue-100 text-blue-800",
+  "on-hold": "border-violet-200 bg-violet-100 text-violet-800",
+  cancelled: "border-red-200 bg-red-100 text-red-800",
+  completed: "border-green-200 bg-green-100 text-green-800",
+}[status] || "");
 export function Orders() {
   const [params, setParams] = useSearchParams();
   const query = params.get("q") || "";
@@ -131,7 +138,7 @@ export function Orders() {
                       <p className="text-xs text-muted-foreground">{o.phone}</p>
                     </td>
                     <td>
-                      <span className="chip">{label(o.status)}</span>
+                      <span className={`chip border ${statusTone(o.status)}`}>{label(o.status)}</span>
                     </td>
 
                     <td>{o.courierShipment?.provider || o.carrier || "—"}</td><td>{o.courierShipment?.tracking_id || o.trackingNumber || "—"}</td><td>{o.courierShipment?.courier_status || o.courierShipment?.state || "—"}</td><td>{money(o.total)}</td>
@@ -266,7 +273,7 @@ function OrderEditor({
               onChange={(e) => {
                 const nextStatus = e.target.value;
                 setForm({ ...form, status: nextStatus });
-                if (order.status === "pending" && nextStatus === "processing")
+                if ((["pending", "processing"].includes(order.status) || nextStatus === "on-hold") && nextStatus !== order.status)
                   void autoSaveStatus(nextStatus);
               }}
             >
