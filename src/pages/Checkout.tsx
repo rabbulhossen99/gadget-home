@@ -204,6 +204,7 @@ export function Checkout() {
     [name, setName] = useState(user?.name || ""),
     [phone, setPhone] = useState(""),
     [address, setAddress] = useState(""),
+    [note, setNote] = useState(""),
     [payment, setPayment] = useState(
       catalog.settings.codEnabled ? "cod" : "manual",
     ),
@@ -228,12 +229,15 @@ export function Checkout() {
         address,
         items: cart,
         checkoutKey: key,
+        area,
+        coupon: applied,
+        note,
       })
         .then(() => setDraftSaved(true))
         .catch(() => setDraftSaved(false));
     }, 300);
     return () => clearTimeout(timer);
-  }, [name, phone, address, cart, key, busy]);
+  }, [name, phone, address, cart, key, busy, area, applied, note]);
   const { active } = useTracking(),
     initiated = useRef(false);
   useEffect(() => {
@@ -449,7 +453,7 @@ export function Checkout() {
             )}
           </fieldset>
           <Field label="Order note (optional)">
-            <textarea className="field" name="note" rows={2} maxLength={1000} />
+            <textarea className="field" name="note" rows={2} maxLength={1000} value={note} onChange={(e) => setNote(e.target.value)} />
           </Field>
           {draftSaved && (
             <p className="text-xs text-muted-foreground">

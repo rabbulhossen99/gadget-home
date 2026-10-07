@@ -279,3 +279,5 @@ export const orderUpdateSchema = z
     expectedVersion: z.number().int().min(1),
   })
   .strict();
+
+export const orderEditSchema = z.object({ items: z.array(z.object({ id: z.string().min(1), quantity: z.number().int().min(1).max(999) })).min(1), discount: money.refine((value) => value % 100 === 0, "Discount must be a whole BDT amount."), shipping: money.optional(), finalAmount: money.optional(), total: money.optional(), note: z.string().max(2000).optional(), customerInfo: z.object({ name: short.min(2).optional(), phone: z.string().regex(/^01\d{9}$/).optional(), address: z.string().trim().min(8).max(1000).optional(), note: z.string().max(2000).optional() }).strict().optional(), expectedVersion: z.number().int().min(1) }).strict();

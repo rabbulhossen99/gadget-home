@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { id, record, records, save, transaction } from "./db.mjs";
+import { checkoutSchema } from "./schemas.mjs";
 export const hash = (value) => createHash("sha256").update(value).digest("hex");
 export function fail(message, status = 400) {
   throw Object.assign(new Error(message), { status });
@@ -160,10 +161,11 @@ export function orderView(db, row, admin = false) {
     status: row.status,
     createdAt: row.created_at,
     events,
+    items: db.prepare("SELECT * FROM order_items WHERE order_id=? ORDER BY rowid").all(row.id).map((item) => ({ id: item.id, productId: item.product_id, variantId: item.variant_id, quantity: item.quantity, unitPrice: (data.lines || []).find((line) => line.productId === item.product_id && line.variantId === item.variant_id)?.unitPrice, ...JSON.parse(item.data) })),
   };
 }
-export function placeOrder(db, session, input) {
-  return transaction(db, () => {
+export function placeOrder(db, session, input, withinTransaction = false) {
+  const work = () => {
     const previous = db
       .prepare("SELECT * FROM orders WHERE session_id=? AND idempotency_key=?")
       .get(session.id, input.idempotencyKey);
@@ -227,7 +229,7 @@ export function placeOrder(db, session, input) {
         product.id,
         variant.id,
         req.quantity,
-        JSON.stringify({ name: product.name, variant: variant.name }),
+        JSON.stringify({ name: product.name, variant: variant.name, unitPrice: variant.price }),
       );
     }
     if (couponId)
@@ -251,9 +253,91 @@ export function placeOrder(db, session, input) {
       ),
       trackingToken: token,
     };
+  };
+  return withinTransaction ? work() : transaction(db, work);
+}
+export function convertIncompleteOrder(db, checkoutId, actor, details = {}) {
+  return transaction(db, () => {
+    const existing = db.prepare("SELECT * FROM orders WHERE json_extract(data,'$.sourceCheckoutId')=?").get(checkoutId);
+    if (existing) return orderView(db, existing, true);
+    const draft = db.prepare("SELECT * FROM checkouts WHERE id=?").get(checkoutId);
+    if (!draft) fail("Incomplete order not found.", 404);
+    const data = JSON.parse(draft.data);
+    if (data.convertedOrderId) return orderView(db, db.prepare("SELECT * FROM orders WHERE id=?").get(data.convertedOrderId), true);
+    if (draft.status === "converted") fail("This checkout has already been converted.", 409);
+    data.name = data.name || "Guest Customer";
+    data.address = data.address || "Address not provided";
+    const input = checkoutSchema.parse({ name: data.name, phone: data.phone, address: data.address, email: data.email || "", note: data.note || "", items: data.items, area: data.area || "inside", coupon: data.coupon || "", paymentMethod: "cod", paymentReference: "", idempotencyKey: data.checkoutKey || draft.id, expectedTotal: quote(db, { items: data.items, area: data.area || "inside", coupon: data.coupon || "" }).total });
+    const session = db.prepare("SELECT user_id FROM sessions WHERE id=?").get(draft.session_id);
+    const order = placeOrder(db, { id: draft.session_id, user_id: session?.user_id || null }, input, true);
+    const convertedAt = new Date().toISOString();
+    const stored = JSON.parse(db.prepare("SELECT data FROM orders WHERE id=?").get(order.id).data);
+    db.prepare("UPDATE orders SET data=? WHERE id=?").run(JSON.stringify({ ...stored, sourceCheckoutId: draft.id, convertedAt, originalPhone: input.phone }), order.id);
+    db.prepare("INSERT INTO order_events(id,order_id,actor,data) VALUES(?,?,?,?)").run(id(), order.id, actor, JSON.stringify({ status: order.status, message: "Incomplete checkout confirmed by Admin", sourceCheckoutId: draft.id, convertedAt }));
+    db.prepare("DELETE FROM checkouts WHERE id=?").run(draft.id);
+    return orderView(db, db.prepare("SELECT * FROM orders WHERE id=?").get(order.id), true);
   });
 }
-export const transitions = {
+export function editConfirmedOrder(db, orderId, input, actor) {
+  return transaction(db, () => {
+    const row = db.prepare("SELECT * FROM orders WHERE id=?").get(orderId);
+    if (!row) fail("Order not found.", 404);
+
+    const data = JSON.parse(row.data);
+    const customer = input.customerInfo || {};
+    if (data.originalPhone && customer.phone !== undefined && customer.phone !== data.originalPhone) fail("Original customer phone is locked.", 409);
+    if ((data.trackingNumber || data.carrier) && ((customer.name !== undefined && customer.name !== data.name) || (customer.phone !== undefined && customer.phone !== data.phone) || (customer.address !== undefined && customer.address !== data.address))) fail("Customer and delivery details are locked after courier submission.", 409);
+    if (data.version !== input.expectedVersion) fail("Order changed. Reload before saving.", 409);
+    const current = db.prepare("SELECT * FROM order_items WHERE order_id=? ORDER BY rowid").all(orderId);
+    if (!Number.isInteger(input.discount) || input.discount < 0 || input.discount % 100 !== 0) fail("Discount must be a whole BDT amount.");
+    const inventoryHeld = !["cancelled", "returned", "refunded"].includes(row.status) || data.courierInventoryHeld;
+    const requested = new Map(input.items.map((item) => [item.id, item.quantity]));
+    if (requested.size !== input.items.length || input.items.some((item) => !current.some((old) => old.id === item.id))) fail("Invalid order items.");
+    if (!input.items.length) fail("An order must contain at least one product.");
+    const changes = [];
+    for (const item of current) {
+      const next = requested.get(item.id);
+      if (next === undefined) {
+        const product = record(db, "products", item.product_id), variant = product?.variants.find((v) => v.id === item.variant_id);
+        if (variant && inventoryHeld) { variant.stock += item.quantity; save(db, "products", product.id, product); }
+        db.prepare("DELETE FROM order_items WHERE id=?").run(item.id);
+        changes.push(`Product removed: ${JSON.parse(item.data).name}`);
+      } else {
+        if (!Number.isInteger(next) || next < 1 || next > 999) fail("Quantity must be a whole number from 1 to 999.");
+        if (next !== item.quantity) {
+          const product = record(db, "products", item.product_id), variant = product?.variants.find((v) => v.id === item.variant_id);
+          if (inventoryHeld && !variant) fail("Product variant is unavailable.", 409);
+          const delta = item.quantity - next;
+          if (inventoryHeld && delta < 0 && variant.stock < -delta) fail(`Not enough stock for ${JSON.parse(item.data).name}.`, 409);
+          if (inventoryHeld) { variant.stock += delta; save(db, "products", product.id, product); }
+          db.prepare("UPDATE order_items SET quantity=? WHERE id=?").run(next, item.id);
+          changes.push(`Quantity changed: ${item.quantity} → ${next}`);
+        }
+      }
+    }
+    const remaining = db.prepare("SELECT * FROM order_items WHERE order_id=? ORDER BY rowid").all(orderId);
+    if (!remaining.length) fail("An order must contain at least one product.");
+    const subtotal = remaining.reduce((sum, item) => { const price = JSON.parse(item.data).unitPrice ?? (data.lines || []).find((line) => line.productId === item.product_id && line.variantId === item.variant_id)?.unitPrice; if (!Number.isSafeInteger(price)) fail("This legacy order cannot be edited safely.", 409); return sum + price * item.quantity; }, 0);
+    const discount = input.discount;
+    const shipping = input.shipping ?? data.shipping;
+    if (discount > subtotal + shipping) fail("Discount cannot exceed subtotal plus shipping.");
+    const calculatedTotal = subtotal + shipping - discount;
+    const total = calculatedTotal;
+    if (discount !== (data.discount || 0)) changes.push(discount ? `Discount set: ৳${discount / 100}` : "Discount removed");
+    if (total !== data.total) changes.push(`Final amount changed: ৳${(data.total || 0) / 100} → ৳${total / 100}`);
+    if (input.note !== undefined && input.note !== data.note) changes.push("Customer note updated");
+    if (customer.note !== undefined && customer.note !== data.note) changes.push("Customer note updated");
+    if (input.shipping !== undefined && input.shipping !== data.shipping) changes.push(`Shipping changed: ৳${(data.shipping || 0) / 100} → ৳${input.shipping / 100}`);
+    for (const key of ["name", "phone", "address"]) if (customer[key] !== undefined && customer[key] !== data[key]) changes.push(`${key} updated`);
+    if (!changes.length) return orderView(db, row, true);
+    const lines = remaining.map((item) => { const snapshot = JSON.parse(item.data); const old = (data.lines || []).find((line) => line.productId === item.product_id && line.variantId === item.variant_id); const unitPrice = snapshot.unitPrice ?? old?.unitPrice; if (!Number.isSafeInteger(unitPrice)) fail("This legacy order cannot be edited safely.", 409); return { ...old, type: "product", name: snapshot.name, variant: snapshot.variant, productId: item.product_id, variantId: item.variant_id, unitPrice, quantity: item.quantity, total: unitPrice * item.quantity }; });
+    if ((data.lines || []).some((line) => line.type === "combo")) fail("Combo orders cannot be edited safely yet.", 409);
+    const nextData = { ...data, ...customer, lines, subtotal, shipping: input.shipping ?? data.shipping, discount, manualDiscount: discount, total, note: customer.note ?? input.note ?? data.note, version: data.version + 1 };
+    db.prepare("UPDATE orders SET data=? WHERE id=?").run(JSON.stringify(nextData), orderId);
+    db.prepare("INSERT INTO order_events(id,order_id,actor,data) VALUES(?,?,?,?)").run(id(), orderId, actor, JSON.stringify({ status: row.status, message: "Order modified by Admin; " + changes.join("; ") }));
+    return orderView(db, db.prepare("SELECT * FROM orders WHERE id=?").get(orderId), true);
+  });
+}export const transitions = {
   pending: ["processing", "on-hold", "cancelled", "pending-payment", "confirmed"],
   "pending-payment": ["pending", "processing", "on-hold", "cancelled"],
   "on-hold": ["pending", "processing", "cancelled"],
@@ -286,6 +370,8 @@ export function updateOrder(db, orderId, input, actor) {
     const deliveryChanged = ["name", "phone", "address"].some(
       (key) => input[key] !== undefined && input[key] !== data[key],
     );
+    if (data.originalPhone && input.phone !== undefined && input.phone !== data.originalPhone) fail("Original customer phone is locked.", 409);
+    if (["confirmed", "processing", "shipped", "delivered", "completed"].includes(row.status) && (deliveryChanged || input.carrier !== data.carrier || input.trackingNumber !== data.trackingNumber)) fail("Customer and courier details are locked after confirmation.", 409);
     if (
       deliveryChanged &&
       !["pending", "pending-payment", "on-hold", "confirmed", "processing"].includes(row.status)
@@ -349,3 +435,8 @@ export function updateOrder(db, orderId, input, actor) {
     );
   });
 }
+
+
+
+
+

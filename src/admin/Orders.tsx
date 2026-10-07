@@ -1,6 +1,6 @@
 import { OrderCourier, type CourierOrderState } from "./OrderCourier";
-import { useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useResource, useStore } from "@/lib/store";
 import { api, money, csv, download } from "@/lib/api";
 import type { Order } from "@/lib/types";
@@ -244,6 +244,7 @@ function OrderEditor({
           <p>Customer note: {order.note || "None"}</p>
         </div>
       </section>
+      <ConfirmedOrderEdit key={order.version} order={order} onSaved={async (next) => { setOrder(next); setForm({ ...editable(next), expectedVersion: next.version }); await onSave(); }} />
       <form
         className="panel"
         onSubmit={async (e) => {
@@ -289,6 +290,7 @@ function OrderEditor({
             <input
               className="field"
               value={form.carrier}
+              readOnly={["confirmed", "processing", "shipped", "delivered", "completed"].includes(order.status)}
               onChange={(e) => setForm({ ...form, carrier: e.target.value })}
             />
           </Field>
@@ -296,6 +298,7 @@ function OrderEditor({
             <input
               className="field"
               value={form.trackingNumber}
+              readOnly={["confirmed", "processing", "shipped", "delivered", "completed"].includes(order.status)}
               onChange={(e) =>
                 setForm({ ...form, trackingNumber: e.target.value })
               }
@@ -311,6 +314,7 @@ function OrderEditor({
                   required
                   minLength={2}
                   value={form.name}
+                  readOnly={["confirmed", "processing"].includes(order.status)}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                 />
               </Field>
@@ -320,6 +324,7 @@ function OrderEditor({
                   required
                   pattern="01[0-9]{9}"
                   value={form.phone}
+                  readOnly={["confirmed", "processing"].includes(order.status)}
                   onChange={(e) => setForm({ ...form, phone: e.target.value })}
                 />
               </Field>
@@ -330,6 +335,7 @@ function OrderEditor({
                     required
                     minLength={8}
                     value={form.address}
+                    readOnly={["confirmed", "processing"].includes(order.status)}
                     onChange={(e) =>
                       setForm({ ...form, address: e.target.value })
                     }
@@ -367,9 +373,29 @@ function OrderEditor({
     </div>
   );
 }
+function ConfirmedOrderEdit({ order, onSaved }: { order: Order; onSaved: (order: Order) => Promise<void> }) {
+  const [editing, setEditing] = useState(false);
+  const [items, setItems] = useState((order.items || []).map((item) => ({ ...item })));
+  const [discount, setDiscount] = useState(order.discount || 0);
+  const [shipping, setShipping] = useState(order.shipping || 0);
+  const [customerInfo, setCustomerInfo] = useState({ name: order.name, phone: order.phone, address: order.address, note: order.note || "" });
+  const [note, setNote] = useState(order.note || "");
+  const [busy, setBusy] = useState(false); const [error, setError] = useState("");
+  const [finalAmount, setFinalAmount] = useState(order.total);
+  const subtotal = items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0); const finalTotal = Math.max(0, subtotal + shipping - discount);
+  useEffect(() => { setFinalAmount(finalTotal); }, [subtotal, discount, shipping]);
+  if (!editing) return <div className="panel"><Button type="button" onClick={() => setEditing(true)}>Edit Order</Button></div>;
+  return <form className="panel" onSubmit={async (e) => { e.preventDefault(); setBusy(true); setError(""); try { const next = await api<Order>(`/admin/orders/${order.id}/edit`, "PATCH", { items: items.map(({ id, quantity }) => ({ id, quantity })), discount: Math.max(0, Math.round(discount)), shipping: Math.max(0, Math.round(shipping)), customerInfo, expectedVersion: order.version }); await onSaved(next); setEditing(false); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }}>
+    <h2 className="mb-4 text-xl font-bold">Edit Order</h2>
+    <div className="space-y-3">{items.map((item) => <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"><div><strong>{item.name}</strong><p className="text-xs text-muted-foreground">{money(item.unitPrice)} each</p></div><div className="flex items-center gap-2"><Button type="button" size="icon" variant="outline" onClick={() => setItems(items.map((x) => x.id === item.id ? { ...x, quantity: Math.max(1, x.quantity - 1) } : x))}>−</Button><input aria-label={`Quantity for ${item.name}`} className="field w-16 text-center" type="number" min="1" max="999" value={item.quantity} onChange={(e) => setItems(items.map((x) => x.id === item.id ? { ...x, quantity: Math.max(1, Math.min(999, Number(e.target.value) || 1)) } : x))} /><Button type="button" size="icon" variant="outline" onClick={() => setItems(items.map((x) => x.id === item.id ? { ...x, quantity: x.quantity + 1 } : x))}>+</Button><Button type="button" variant="destructive" size="sm" onClick={() => items.length > 1 && confirm("Remove this product from the order?") && setItems(items.filter((x) => x.id !== item.id))}>Remove</Button></div></div>)}</div>
+    <div className="mt-5 grid gap-3 sm:grid-cols-2"><Field label="Discount (BDT)"><input className="field" type="number" min="0" step="1" placeholder="Enter discount amount (BDT)" value={discount / 100} onChange={(e) => { if (/^\d*$/.test(e.target.value)) setDiscount(Number(e.target.value || 0) * 100); }} /></Field><Field label="Shipping (BDT)"><input className="field" type="number" min="0" step="0.01" value={(shipping / 100).toFixed(2)} onChange={(e) => setShipping(Math.max(0, Math.round(Number(e.target.value || 0) * 100)))} /></Field><Field label="Final payable amount (BDT)"><input className="field" type="number" min="0" step="0.01" value={finalTotal / 100} readOnly /></Field><Field label="Customer name"><input className="field" value={customerInfo.name} onChange={(e) => setCustomerInfo({ ...customerInfo, name: e.target.value })} /></Field><Field label="Customer phone"><input className="field" value={customerInfo.phone} onChange={(e) => setCustomerInfo({ ...customerInfo, phone: e.target.value })} /></Field><Field label="Delivery address"><textarea className="field" value={customerInfo.address} onChange={(e) => setCustomerInfo({ ...customerInfo, address: e.target.value })} /></Field><Field label="Customer note"><textarea className="field" value={note} onChange={(e) => { setNote(e.target.value); setCustomerInfo({ ...customerInfo, note: e.target.value }); }} /></Field></div>
+    <dl className="mt-5 space-y-2 text-sm"><div className="flex justify-between"><dt>Original subtotal</dt><dd>{money(subtotal)}</dd></div><div className="flex justify-between"><dt>Shipping</dt><dd>{money(shipping)}</dd></div><div className="flex justify-between"><dt>Discount</dt><dd>−{money(discount)}</dd></div><div className="flex justify-between text-lg font-bold"><dt>Final payable</dt><dd>{money(finalTotal)}</dd></div></dl>{finalAmount !== finalTotal && <p className="mt-3 text-sm text-amber-700">Manual price adjustment applied by Admin</p>}<ErrorBox error={error} /><Button disabled={busy || !items.length} className="mt-5">{busy ? "Saving…" : "Save Order Changes"}</Button>
+  </form>;
+}
 export function Incomplete() {
   const { data, error, reload } = useResource<any>("/admin/overview"),
     { notice } = useStore(),
+    navigate = useNavigate(),
     [query, setQuery] = useState("");
   return (
     <>
@@ -425,6 +451,16 @@ export function Incomplete() {
                 </select>
               </div>
               <div className="mt-4 flex flex-wrap gap-3 text-sm">
+                <Button type="button" onClick={async (e) => {
+                  const button = e.currentTarget;
+                  button.disabled = true;
+                  try {
+                    await api("/admin/incomplete/" + c.id + "/confirm", "POST", {});
+                    notice("Order confirmed and moved to Orders & Sales");
+                    navigate("/admin/orders");
+                  } catch (e) { notice((e as Error).message); }
+                  finally { button.disabled = false; }
+                }}>Confirm Order</Button>
                 <Button
                   type="button"
                   variant="outline"

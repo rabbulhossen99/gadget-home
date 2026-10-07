@@ -126,6 +126,8 @@ export type User = {
   role: "customer" | "admin";
 };
 export type Order = Quote & {
+  items?: Array<{ id: string; productId: string; variantId: string; name: string; variant?: string; unitPrice: number; quantity: number }>;
+  manualDiscount?: number;
   courierShipment?: { provider: string; tracking_id: string; courier_status: string; state: string } | null;
     courierLocation?: { provider: string; districtId: string; thanaId: string; areaId?: string; district: string; thana: string; area?: string; locationType?: string };
   id: string;

@@ -12,6 +12,7 @@ import {
   quoteSchema,
   checkoutSchema,
   orderUpdateSchema,
+  orderEditSchema,
   phoneSchema,
 } from "./schemas.mjs";
 import {
@@ -23,6 +24,8 @@ import {
   quote,
   placeOrder,
   orderView,
+  editConfirmedOrder,
+  convertIncompleteOrder,
   updateOrder,
 } from "./commerce.mjs";
 import {
@@ -268,6 +271,9 @@ app.set('trust proxy', 1);
         address: z.string().max(1000).default(""),
         items: cartSchema.refine((items) => items.length > 0, "Cart is empty."),
         checkoutKey: z.string().uuid().optional(),
+        note: z.string().max(1000).optional(),
+        area: z.enum(["inside", "outside"]).optional(),
+        coupon: z.string().max(30).optional(),
       })
       .strict()
       .parse(req.body);
@@ -439,6 +445,16 @@ app.set('trust proxy', 1);
         ),
     );
   });
+  app.patch("/api/admin/orders/:id/edit", (req, res) => {
+    const result = editConfirmedOrder(db, req.params.id, orderEditSchema.parse(req.body), req.user.id);
+    audit(db, req.user.id, "order.edit", req.params.id);
+    res.json(result);
+  });
+  app.put("/api/orders/:id/edit", requireAdmin, (req, res) => {
+    const result = editConfirmedOrder(db, req.params.id, orderEditSchema.parse(req.body), req.user.id);
+    audit(db, req.user.id, "order.edit", req.params.id);
+    res.json(result);
+  });
   app.patch("/api/admin/orders/:id", (req, res) => {
     const result = updateOrder(
       db,
@@ -462,6 +478,12 @@ app.set('trust proxy', 1);
     if (!result.changes) fail("Incomplete order not found.", 404);
     audit(db, req.user.id, "checkout." + status, req.params.id);
     res.json({ ok: true });
+  });
+  app.post("/api/admin/incomplete/:id/confirm", (req, res) => {
+    const details = z.object({ name: z.string().trim().min(2).max(200).optional(), address: z.string().trim().min(8).max(1000).optional() }).strict().parse(req.body || {});
+    const order = convertIncompleteOrder(db, req.params.id, req.user.id, details);
+    audit(db, req.user.id, "checkout.confirm", req.params.id);
+    res.json(order);
   });
   app.delete("/api/admin/incomplete/:id", (req, res) => {
     const result = db
@@ -743,3 +765,4 @@ app.set('trust proxy', 1);
   });
   return app;
 }
+
