@@ -56,7 +56,7 @@ export const decode = (row) =>
   row ? { ...JSON.parse(row.data), id: row.id, version: row.version } : null;
 export function records(db, kind) {
   return kind === "products" || kind === "categories"
-    ? db.prepare(`SELECT * FROM ${kind}`).all().map(decode)
+    ? db.prepare(`SELECT * FROM ${kind}${kind === "products" ? " ORDER BY rowid DESC" : ""}`).all().map(decode)
     : db.prepare("SELECT * FROM content WHERE kind=?").all(kind).map(decode);
 }
 export function record(db, kind, key) {

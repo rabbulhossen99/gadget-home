@@ -129,7 +129,11 @@ export function Orders() {
               </thead>
               <tbody>
                 {orders.map((o) => (
-                  <tr key={o.id}>
+                  <tr
+                    key={o.id}
+                    className="cursor-pointer"
+                    onClick={() => setSelected(o)}
+                  >
                     <td><strong>{serials.get(o.id)}</strong></td>
                     <td>
                       <strong>{o.number}</strong>
@@ -147,7 +151,13 @@ export function Orders() {
 
                     <td>{o.courierShipment?.provider || o.carrier || "—"}</td><td>{o.courierShipment?.tracking_id || o.trackingNumber || "—"}</td><td>{o.courierShipment?.courier_status || o.courierShipment?.state || "—"}</td><td>{money(o.total)}</td>
                     <td>
-                      <Button variant="outline" onClick={() => setSelected(o)}>
+                      <Button
+                        variant="outline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelected(o);
+                        }}
+                      >
                         View order
                       </Button>
                     </td>

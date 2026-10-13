@@ -438,6 +438,12 @@ function ContentEditor({
   const config = configs[kind],
     set = (key: string, value: any) =>
       setForm((f: any) => ({ ...f, [key]: value }));
+  const fields =
+    kind === "sections" && form.type === "hero"
+      ? config.fields.filter((field) =>
+          ["image", "title", "link", "banner2Image", "banner2Heading", "banner2RedirectUrl"].includes(field.key),
+        )
+      : config.fields;
   return (
     <form
       className="rounded-2xl border bg-card p-5 sm:p-7"
@@ -459,11 +465,27 @@ function ContentEditor({
       }}
     >
       <div className="grid gap-5 md:grid-cols-2">
-        {config.fields.map((field) => (
+        {fields.map((field) => (
           <EditorField
             key={field.key}
             field={
-              kind === "coupons" && field.key === "value"
+              kind === "sections" && form.type === "hero"
+                ? {
+                    ...field,
+                    label:
+                      field.key === "image"
+                        ? "Hero Banner 1 · Image upload"
+                        : field.key === "title"
+                          ? "Hero Banner 1 · Text (optional)"
+                          : field.key === "link"
+                            ? "Hero Banner 1 · Link URL (optional)"
+                            : field.key === "banner2Image"
+                              ? "Hero Banner 2 · Image upload"
+                              : field.key === "banner2Heading"
+                                ? "Hero Banner 2 · Text (optional)"
+                                : "Hero Banner 2 · Link URL (optional)",
+                  }
+                : kind === "coupons" && field.key === "value"
                 ? {
                     ...field,
                     type: form.type === "fixed" ? "money" : "number",

@@ -111,9 +111,22 @@ export const schemas = {
         "combo",
         "promotion",
       ]),
-      title: short.min(1),
+      title: short,
       subtitle: text,
       image: url,
+      mobileImage: url.optional(),
+      banner2Image: url.optional(),
+      banner2Heading: short.optional(),
+      banner2Description: text.optional(),
+      banner2ButtonText: short.optional(),
+      banner2RedirectUrl: z
+        .string()
+        .max(300)
+        .refine(
+          (v) => !v || /^\/(?!\/)[a-zA-Z0-9/?=&%#_.-]*$/.test(v) || /^https?:\/\/[^\s]+$/.test(v),
+          "Use a local path or valid HTTP(S) URL",
+        )
+        .optional(),
       link: href,
       buttonText: short,
       productIds: z.array(key).max(100),

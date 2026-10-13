@@ -68,7 +68,18 @@ export function installTracking(db) { db.exec("CREATE TABLE IF NOT EXISTS tracki
 export function trackingService(db, { origin = process.env.APP_ORIGIN || "http://localhost:5173", fetch = globalThis.fetch } = {}) {
   installTracking(db);
   let cache = null;
-  const read = () => { if (cache) return cache; const row = db.prepare("SELECT encrypted FROM tracking_settings WHERE id='store'").get(); return (cache = schema.parse(row ? decrypt(row.encrypted) : {})); };
+  const read = () => {
+    if (cache) return cache;
+    const row = db.prepare("SELECT encrypted FROM tracking_settings WHERE id='store'").get();
+    const environment = row
+      ? {}
+      : {
+          pixelId: process.env.META_PIXEL_ID || "",
+          accessToken: process.env.META_CAPI_ACCESS_TOKEN || "",
+          testCode: process.env.META_TEST_EVENT_CODE || "",
+        };
+    return (cache = schema.parse(row ? decrypt(row.encrypted) : environment));
+  };
   const status = value => ({ browserPixel: !!value.pixelId, serverCapi: !!(value.pixelId && value.accessToken && value.serverSide), graphVersion: GRAPH_VERSION });
   const safe = value => ({ ...value, accessToken: "", configured: !!value.accessToken });
   const save = (input, actor) => {

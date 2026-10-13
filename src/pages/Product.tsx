@@ -32,7 +32,10 @@ export function Product() {
 function ProductDetails({ product: p }: { product: ProductType }) {
   const { catalog, add, notice, user } = useStore(),
     navigate = useNavigate(),
-    [selected, setSelected] = useState(p.variants[0]?.id),
+    [selected, setSelected] = useState(
+      p.variants.find((variant) => /^1\s*pc$/i.test(variant.name.trim()))?.id ||
+        p.variants[0]?.id,
+    ),
     [photo, setPhoto] = useState(0),
     [zoom, setZoom] = useState(false),
     [position, setPosition] = useState({ x: 50, y: 50 }),
@@ -77,7 +80,7 @@ function ProductDetails({ product: p }: { product: ProductType }) {
     }
   }
   return (
-    <main className="mx-auto max-w-7xl px-4 py-6 pb-24 sm:px-6 md:pb-8">
+    <main className="mx-auto max-w-7xl px-4 py-6 pb-8 sm:px-6">
       <nav className="mb-6 flex items-center gap-2 text-xs font-semibold text-muted-foreground">
         <Link to="/">Home</Link>
         <ChevronRight size={14} />
@@ -150,10 +153,18 @@ function ProductDetails({ product: p }: { product: ProductType }) {
             <p className="text-xs font-bold uppercase text-primary">
               {category?.name}
             </p>
-            <h1 className="mt-2 font-display text-3xl font-semibold sm:text-4xl">
+            <div className="mt-4 border-b pb-4 sm:mt-6 sm:pb-5">
+              <h2 className="font-display text-2xl font-bold sm:text-3xl">
+                Quantity / Package Options
+              </h2>
+              <p className="mt-1 text-xs text-muted-foreground sm:text-sm">
+                Choose your preferred package and save more with bigger quantities.
+              </p>
+            </div>
+            <h1 className="mt-3 text-center font-display text-xl font-semibold sm:mt-4 sm:text-left sm:text-2xl">
               {p.name}
             </h1>
-            <p className="mt-3 text-sm leading-6 text-muted-foreground">
+            <p className="mt-2 text-xs leading-5 text-muted-foreground sm:mt-3 sm:text-sm sm:leading-6">
               {p.detail}
             </p>
             <div className="mt-4 flex gap-4 text-sm">
@@ -166,7 +177,7 @@ function ProductDetails({ product: p }: { product: ProductType }) {
                 {v?.stock ? `${v.stock} in stock` : "Out of stock"}
               </span>
             </div>
-            <div className="my-7 flex items-end gap-3 border-y py-5">
+            <div className="my-5 flex items-end gap-3 border-y py-3 sm:my-7 sm:py-5">
               <span className="text-3xl font-bold">{money(v?.price || 0)}</span>
               {v?.compareAt && (
                 <span className="text-lg text-muted-foreground line-through">
@@ -175,10 +186,10 @@ function ProductDetails({ product: p }: { product: ProductType }) {
               )}
             </div>
             <fieldset>
-              <legend className="mb-3 text-xs font-bold uppercase text-muted-foreground">
+              <legend className="mb-2 text-[11px] font-bold uppercase text-muted-foreground sm:mb-3 sm:text-xs">
                 Select package
               </legend>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
                 {p.variants.map((pack) => (
                   <button
                     key={pack.id}
@@ -188,14 +199,14 @@ function ProductDetails({ product: p }: { product: ProductType }) {
                       setQuantity(1);
                     }}
                     className={cn(
-                      "min-h-20 rounded-lg border-2 bg-card p-3 text-left",
+                      "min-h-16 rounded-2xl border-2 bg-card p-2 text-left shadow-sm transition sm:min-h-20 sm:p-3",
                       selected === pack.id
                         ? "border-primary bg-secondary"
                         : "border-transparent ring-1 ring-border",
                     )}
                   >
-                    <span className="block text-sm font-bold">{pack.name}</span>
-                    <span className="mt-1 block text-xs text-muted-foreground">
+                    <span className="block text-xs font-bold sm:text-sm">{pack.name}</span>
+                    <span className="mt-1 block text-[11px] text-muted-foreground sm:text-xs">
                       {money(pack.price)} ·{" "}
                       {pack.stock ? "Available" : "Out of stock"}
                     </span>
@@ -203,7 +214,7 @@ function ProductDetails({ product: p }: { product: ProductType }) {
                 ))}
               </div>
             </fieldset>
-            <div className="mt-6 grid grid-cols-[auto_1fr] gap-3">
+            <div className="mt-4 grid grid-cols-[auto_1fr] gap-2 sm:mt-6 sm:gap-3">
               <div className="flex items-center rounded-lg border bg-card p-1">
                 <Button
                   variant="ghost"
@@ -235,13 +246,13 @@ function ProductDetails({ product: p }: { product: ProductType }) {
             <Button
               variant="buyNow"
               size="shop"
-              className="mt-3 w-full"
+              className="mx-auto mt-2 w-full max-w-md rounded-full sm:mt-3"
               disabled={busy || !v?.stock}
               onClick={() => buy(true)}
             >
               Buy now · {money((v?.price || 0) * quantity)}
             </Button>
-            <div className="mt-8 grid grid-cols-2 gap-4 border-t pt-6">
+            <div className="mt-6 grid grid-cols-2 gap-4 border-t pt-5 sm:mt-8 sm:pt-6">
               <div className="flex gap-3">
                 <Truck className="shrink-0 text-primary" />
                 <div>
@@ -360,7 +371,7 @@ function ProductDetails({ product: p }: { product: ProductType }) {
         <h2 className="mb-6 font-display text-2xl font-bold">
           Complete your wellness routine
         </h2>
-        <div className="grid gap-5 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
           {catalog.products
             .filter((x) => x.id !== p.id)
             .slice(0, 3)
@@ -369,24 +380,6 @@ function ProductDetails({ product: p }: { product: ProductType }) {
             ))}
         </div>
       </section>
-      <div className="fixed inset-x-0 bottom-0 z-40 flex gap-3 border-t bg-card p-3 md:hidden">
-        <Button
-          variant="outline"
-          className="flex-1"
-          disabled={busy || !v?.stock}
-          onClick={() => buy()}
-        >
-          Add to cart
-        </Button>
-        <Button
-          variant="buyNow"
-          className="flex-1"
-          disabled={busy || !v?.stock}
-          onClick={() => buy(true)}
-        >
-          Buy now
-        </Button>
-      </div>
     </main>
   );
 }

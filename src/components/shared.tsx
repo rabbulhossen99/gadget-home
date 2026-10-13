@@ -202,44 +202,44 @@ export function ProductCard({ product }: { product: Product }) {
   if (!v) return null;
   const category = catalog.categories.find((c) => c.id === product.categoryId);
   return (
-    <article className="overflow-hidden rounded-3xl border-2 border-border bg-card">
+    <article className="overflow-hidden rounded-3xl border-2 border-border bg-card shadow-sm">
       <Link to={"/product/" + product.slug} className="relative block">
         <img
           src={product.images[0]}
           alt={product.name}
           loading="lazy"
-          className="aspect-[5/4] w-full object-cover"
+          className="aspect-square w-full bg-muted/20 object-contain p-2 sm:p-3"
         />
         {v.compareAt && v.compareAt > v.price ? (
-          <span className="absolute left-3 top-3 rounded-full bg-coral px-3 py-1 text-xs font-bold text-white">
+          <span className="absolute left-2 top-2 rounded-full bg-coral px-2 py-1 text-[10px] font-bold text-white sm:left-3 sm:top-3 sm:px-3 sm:text-xs">
             −{Math.round((1 - v.price / v.compareAt) * 100)}%
           </span>
         ) : null}
       </Link>
-      <div className="p-5">
+      <div className="p-3 sm:p-4">
         <Link
           to={"/category/" + category?.slug}
-          className="text-xs font-bold uppercase text-primary"
+          className="text-[10px] font-bold uppercase text-primary sm:text-xs"
         >
           {category?.name}
         </Link>
-        <h3 className="mt-1 font-display text-lg font-semibold">
+        <h3 className="mt-1 line-clamp-2 font-display text-base font-semibold leading-tight sm:text-lg">
           <Link to={"/product/" + product.slug}>{product.name}</Link>
         </h3>
-        <p className="mt-1 text-sm text-muted-foreground">{product.detail}</p>
-        <div className="mt-3 flex items-center gap-2">
-          <span className="text-xl font-bold">{money(v.price)}</span>
+        <p className="mt-1 line-clamp-1 text-xs text-muted-foreground sm:text-sm">{product.detail}</p>
+        <div className="mt-2 flex flex-wrap items-center gap-1.5 sm:mt-3 sm:gap-2">
+          <span className="text-lg font-bold sm:text-xl">{money(v.price)}</span>
           {v.compareAt && (
             <span className="text-sm text-muted-foreground line-through">
               {money(v.compareAt)}
             </span>
           )}
         </div>
-        <div className="mt-4 grid grid-cols-2 gap-2">
+        <div className="mt-3 grid grid-cols-2 gap-1.5 sm:mt-4 sm:gap-2">
           <Button
             variant="shop"
             size="sm"
-            className="h-11 w-full px-2 text-xs sm:px-3 sm:text-sm"
+            className="h-9 w-full rounded-xl px-1 text-[10px] sm:h-10 sm:px-2 sm:text-xs"
             disabled={busy || !v.stock}
             onClick={async () => {
               setBusy(true);
@@ -262,7 +262,7 @@ export function ProductCard({ product }: { product: Product }) {
           <Button
             variant="buyNow"
             size="sm"
-            className="h-11 w-full border-0 bg-[#F59E0B] px-2 text-xs font-medium text-white transition-colors duration-200 hover:bg-[#D97706] hover:text-white sm:px-3 sm:text-sm"
+            className="h-9 w-full rounded-xl border-0 bg-[#F59E0B] px-1 text-[10px] font-medium text-white transition-colors duration-200 hover:bg-[#D97706] hover:text-white sm:h-10 sm:px-2 sm:text-xs"
             disabled={busy || !v.stock}
             onClick={async () => {
               setBusy(true);

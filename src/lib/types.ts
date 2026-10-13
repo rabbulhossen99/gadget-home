@@ -47,6 +47,12 @@ export type Section = {
   title: string;
   subtitle: string;
   image: string;
+  mobileImage?: string;
+  banner2Image?: string;
+  banner2Heading?: string;
+  banner2Description?: string;
+  banner2ButtonText?: string;
+  banner2RedirectUrl?: string;
   link: string;
   buttonText: string;
   productIds: string[];

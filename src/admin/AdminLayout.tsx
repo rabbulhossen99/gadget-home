@@ -27,6 +27,7 @@ import { AdminNotifications } from "./Notifications";
 const nav = [
   ["Dashboard", "/admin", LayoutDashboard],
   ["Orders & sales", "/admin/orders", Tag],
+  ["Incomplete orders", "/admin/incomplete", Clock],
   ["Products", "/admin/products", Package],
   ["Categories", "/admin/categories", Layers],
   ["Homepage & banners", "/admin/sections", Image],
@@ -34,7 +35,6 @@ const nav = [
   ["Coupons", "/admin/coupons", Percent],
   ["Campaigns", "/admin/campaigns", PieChart],
   ["Customers", "/admin/customers", Users],
-  ["Incomplete orders", "/admin/incomplete", Clock],
   ["Reviews", "/admin/reviews", MessageSquare],
   ["Analytics", "/admin/analytics", PieChart],
   ["Reports", "/admin/reports", BarChart3],
