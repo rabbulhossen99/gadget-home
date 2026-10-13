@@ -202,7 +202,7 @@ export function ProductCard({ product }: { product: Product }) {
   if (!v) return null;
   const category = catalog.categories.find((c) => c.id === product.categoryId);
   return (
-    <article className="overflow-hidden rounded-3xl border-2 border-border bg-card shadow-sm">
+    <article className="flex h-full flex-col overflow-hidden rounded-3xl border-2 border-border bg-card shadow-sm">
       <Link to={"/product/" + product.slug} className="relative block">
         <img
           src={product.images[0]}
@@ -216,7 +216,7 @@ export function ProductCard({ product }: { product: Product }) {
           </span>
         ) : null}
       </Link>
-      <div className="p-3 sm:p-4">
+      <div className="flex flex-1 flex-col p-3 sm:p-4">
         <Link
           to={"/category/" + category?.slug}
           className="text-[10px] font-bold uppercase text-primary sm:text-xs"
@@ -235,7 +235,7 @@ export function ProductCard({ product }: { product: Product }) {
             </span>
           )}
         </div>
-        <div className="mt-3 grid grid-cols-2 gap-1.5 sm:mt-4 sm:gap-2">
+        <div className="mt-auto grid grid-cols-2 gap-1.5 pt-3 sm:gap-2 sm:pt-4">
           <Button
             variant="shop"
             size="sm"

@@ -63,7 +63,7 @@ function HeroCarousel({ sections }: { sections: Section[] }) {
   }, [sections.length]);
   return (
     <section
-      className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 sm:py-10"
+      className="mx-auto max-w-[1440px] px-4 py-3 sm:px-6 sm:py-5"
       onTouchStart={(e) => { startX.current = e.touches[0].clientX; }}
       onTouchEnd={(e) => {
         const delta = e.changedTouches[0].clientX - startX.current;
@@ -96,6 +96,7 @@ function HeroCarousel({ sections }: { sections: Section[] }) {
           </div>
         )}
       </div>
+      <div className="mx-auto mt-4 h-px max-w-6xl bg-border/60 sm:mt-6" aria-hidden="true" />
     </section>
   );
 }
@@ -190,7 +191,7 @@ function HomeSection({ section: s }: { section: Section }) {
     return (
       <section
         id="packages"
-        className="mx-auto max-w-[1440px] px-4 py-8 sm:px-6 sm:py-10"
+        className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 sm:py-8"
       >
           <div className="mb-5 text-center">
             <h2 className="font-display text-2xl font-bold sm:text-3xl lg:text-4xl">
@@ -214,25 +215,28 @@ function HomeSection({ section: s }: { section: Section }) {
             ? "combo"
             : "deals"
       }
-      className="mx-auto max-w-[1440px] px-4 py-10 sm:px-6 sm:py-12"
+      className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 sm:py-8"
     >
       <h2 className="text-center font-display text-3xl font-bold sm:text-4xl">
         {s.type === "categories" ? "Shop by Category" : s.title}
       </h2>
-      <p className="mb-6 mt-2 text-center text-muted-foreground">
+      <p className="mb-5 mt-2 text-center text-muted-foreground">
         {s.type === "categories"
           ? "Explore our collections and find products that fit your lifestyle."
           : s.subtitle}
       </p>
       {s.type === "categories" ? (
-        <CategoryCarousel
-          categories={catalog.categories.filter((c) =>
-            s.categoryIds.length ? s.categoryIds.includes(c.id) : c.homepage,
-          )}
-          productCount={(id) =>
-            catalog.products.filter((p) => p.categoryId === id).length
-          }
-        />
+        <>
+          <CategoryCarousel
+            categories={catalog.categories.filter((c) =>
+              s.categoryIds.length ? s.categoryIds.includes(c.id) : c.homepage,
+            )}
+            productCount={(id) =>
+              catalog.products.filter((p) => p.categoryId === id).length
+            }
+          />
+          <div className="mx-auto mt-5 h-px max-w-6xl bg-border/60 sm:mt-6" aria-hidden="true" />
+        </>
       ) : s.type === "combo" ? (
         <div className="rounded-[2rem] border border-border bg-card p-4 text-foreground shadow-sm sm:p-6">
           {catalog.combos.map((c) => <ComboBuilder key={c.id} combo={c} />)}
