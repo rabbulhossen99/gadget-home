@@ -371,7 +371,7 @@ function ProductDetails({ product: p }: { product: ProductType }) {
         <h2 className="mb-6 font-display text-2xl font-bold">
           Complete your wellness routine
         </h2>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-4">
           {catalog.products
             .filter((x) => x.id !== p.id)
             .slice(0, 3)

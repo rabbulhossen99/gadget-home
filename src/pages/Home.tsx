@@ -243,7 +243,7 @@ function HomeSection({ section: s }: { section: Section }) {
         </div>
       ) : (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-4">
             {products.slice(0, s.type === "products" && !showAllProducts ? 8 : undefined).map((p) => (
               <ProductCard product={p} key={p.id} />
             ))}
@@ -310,18 +310,18 @@ function CategoryCarousel({
             to={"/category/" + c.slug}
             key={`${c.id}-${i}`}
             data-category-card
-            className="flex min-w-0 basis-[72%] shrink-0 snap-start items-center gap-4 rounded-3xl border bg-card p-4 shadow-sm transition hover:-translate-y-1 hover:shadow-lg sm:basis-[42%] lg:basis-[24%]"
+            className="flex min-w-0 basis-[38%] shrink-0 snap-start flex-col items-center justify-center gap-2 rounded-2xl border bg-card p-3 text-center shadow-sm transition hover:-translate-y-1 hover:shadow-lg sm:basis-[24%] lg:basis-[17%]"
           >
             {c.image ? (
-              <img src={c.image} alt="" className="size-16 shrink-0 rounded-2xl object-cover" />
+              <img src={c.image} alt="" className="size-14 shrink-0 rounded-xl object-cover" />
             ) : (
-              <span className="grid size-16 shrink-0 place-items-center rounded-2xl bg-primary/15 text-primary">
+              <span className="grid size-14 shrink-0 place-items-center rounded-xl bg-primary/15 text-primary">
                 <Icon size={30} />
               </span>
             )}
             <div className="min-w-0">
-              <h3 className="font-display text-lg font-semibold leading-tight">{c.name}</h3>
-              <p className="mt-1 text-sm text-muted-foreground">{productCount(c.id)} products</p>
+              <h3 className="font-display text-sm font-semibold leading-tight sm:text-base">{c.name}</h3>
+              <p className="text-xs text-muted-foreground">{productCount(c.id)} products</p>
             </div>
           </Link>
         );
@@ -601,7 +601,7 @@ export function Shop() {
         {products.length} products
       </p>
       {products.length ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-4">
           {products.map((p) => (
             <ProductCard key={p.id} product={p} />
           ))}
