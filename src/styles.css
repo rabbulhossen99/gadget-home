@@ -2,6 +2,15 @@
 @source "../src";
 @import "tw-animate-css";
 
+/* Defensive guard: legacy or third-party consent UI must never be visible. */
+[class*="cookie"],
+[id*="cookie"],
+[class*="consent"],
+[id*="consent"] {
+  display: none !important;
+  visibility: hidden !important;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 /*
