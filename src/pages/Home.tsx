@@ -120,22 +120,22 @@ function HeroBanner({ section: s }: { section: Section }) {
       {s.image && (
         <picture>
           {s.mobileImage && <source media="(max-width: 767px)" srcSet={s.mobileImage} />}
-          <img src={s.image} alt="" className="absolute inset-0 size-full object-contain" />
+          <img src={s.image} alt="" className="absolute inset-0 size-full object-cover object-center" />
         </picture>
       )}
       {(s.title || s.subtitle || s.buttonText) && (
-        <div className={cn("relative max-w-2xl", s.image && "rounded-2xl bg-background/90 p-6")}>
-          <span className="mb-6 inline-flex gap-2 rounded-full bg-foreground px-4 py-2 text-xs font-bold text-background">
+        <div className={cn("relative max-w-[58%] sm:max-w-2xl", s.image && "rounded-2xl bg-background/85 p-3 sm:p-5")}>
+          <span className="mb-3 inline-flex gap-2 rounded-full bg-foreground px-3 py-1.5 text-[10px] font-bold text-background sm:mb-5 sm:px-4 sm:py-2 sm:text-xs">
             <Leaf size={16} />
           </span>
-          {s.title && <h1 className="whitespace-pre-line font-display text-4xl font-bold leading-tight sm:text-6xl">{s.title}</h1>}
-          {s.subtitle && <p className="mt-5 max-w-xl text-lg text-foreground/80">{s.subtitle}</p>}
-          {s.buttonText && <Button variant="shop" size="shop"><ShoppingBag />{s.buttonText}</Button>}
+          {s.title && <h1 className="whitespace-pre-line font-display text-2xl font-bold leading-[1.05] sm:text-4xl lg:text-5xl">{s.title}</h1>}
+          {s.subtitle && <p className="mt-2 max-w-xl text-xs text-foreground/80 sm:mt-4 sm:text-base lg:text-lg">{s.subtitle}</p>}
+          {s.buttonText && <Button variant="shop" size="shop" className="mt-3 h-9 px-3 text-xs sm:mt-5 sm:h-11 sm:px-5 sm:text-sm"><ShoppingBag />{s.buttonText}</Button>}
         </div>
       )}
     </>
   );
-  const body = <div className="relative min-h-[240px] overflow-hidden px-5 py-6 sm:min-h-[380px] sm:px-10 sm:py-10 lg:px-12">{content}</div>;
+  const body = <div className="relative min-h-[220px] overflow-hidden px-4 py-5 sm:min-h-[340px] sm:px-10 sm:py-10 lg:min-h-[390px] lg:px-12">{content}</div>;
   return s.link ? <Link to={s.link} className="block">{body}</Link> : body;
 }
 function HomeSection({ section: s }: { section: Section }) {
