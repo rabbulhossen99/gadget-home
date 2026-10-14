@@ -9,6 +9,10 @@ import {
   PackageCheck,
   ShoppingBag,
   Check,
+  Truck,
+  ShieldCheck,
+  RotateCcw,
+  Headphones,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { track, useTracking } from "@/lib/tracking";
@@ -44,6 +48,14 @@ export function Home() {
       {otherSections.map((section) => (
         <HomeSection key={section.id} section={section} />
       ))}
+      <section aria-label="Shopping benefits" className="mx-auto max-w-[1440px] px-4 py-4 sm:px-6">
+        <div className="grid grid-cols-2 gap-4 rounded-2xl bg-secondary/50 p-4 text-foreground sm:grid-cols-4 sm:p-6">
+          {[[Truck, "Fast Delivery"], [ShieldCheck, "Secure Payment"], [RotateCcw, "Easy Return"], [Headphones, "24/7 Support"]].map(([Icon, label]) => {
+            const BenefitIcon = Icon as typeof Truck;
+            return <div key={String(label)} className="flex items-center gap-3"><BenefitIcon size={26} /><span className="text-xs font-semibold sm:text-sm">{String(label)}</span></div>;
+          })}
+        </div>
+      </section>
       {!catalog.sections.length && (
         <Empty>
           No homepage sections have been published.{" "}
@@ -123,7 +135,7 @@ function HeroBanner({ section: s }: { section: Section }) {
       )}
     </>
   );
-  const body = <div className="relative min-h-[360px] overflow-hidden px-6 py-12 sm:min-h-[510px] sm:px-12 lg:px-16 lg:py-20">{content}</div>;
+  const body = <div className="relative min-h-[240px] overflow-hidden px-5 py-6 sm:min-h-[380px] sm:px-10 sm:py-10 lg:px-12">{content}</div>;
   return s.link ? <Link to={s.link} className="block">{body}</Link> : body;
 }
 function HomeSection({ section: s }: { section: Section }) {
@@ -310,7 +322,7 @@ function CategoryCarousel({
             to={"/category/" + c.slug}
             key={`${c.id}-${i}`}
             data-category-card
-            className="flex min-w-0 basis-[38%] shrink-0 snap-start flex-col items-center justify-center gap-2 rounded-2xl border bg-card p-3 text-center shadow-sm transition hover:-translate-y-1 hover:shadow-lg sm:basis-[24%] lg:basis-[17%]"
+            className="flex min-w-0 basis-[23%] shrink-0 snap-start flex-col items-center justify-center gap-2 rounded-2xl border bg-card p-2 text-center shadow-sm transition hover:-translate-y-1 hover:shadow-lg sm:basis-[18%] lg:basis-[11.5%]"
           >
             {c.image ? (
               <img src={c.image} alt="" className="size-14 shrink-0 rounded-xl object-cover" />

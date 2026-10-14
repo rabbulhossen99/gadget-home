@@ -1,6 +1,6 @@
 import { Link, Outlet, useNavigate } from "react-router-dom";
 import { useState, type ReactNode } from "react";
-import { Menu, Search, ShoppingBag, X } from "lucide-react";
+import { Menu, Search, ShoppingBag, X, Home as HomeIcon, Grid2X2, UserRound } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { setConsent, useTracking } from "@/lib/tracking";
 import { money } from "@/lib/api";
@@ -24,11 +24,11 @@ export function StoreLayout() {
         </div>
       )}
       <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur-md">
-        <div className="mx-auto flex max-w-[1440px] items-center gap-4 px-4 py-4 sm:px-6">
+        <div className="mx-auto flex max-w-[1440px] flex-wrap items-center gap-3 px-4 py-3 sm:px-6 lg:gap-5">
           <Link to="/" className="shrink-0 font-display text-2xl font-bold">
             {settings.name}
           </Link>
-          <nav className="hidden gap-5 text-sm font-semibold lg:flex">
+          <nav className="order-last hidden w-full items-center gap-6 border-t border-border/50 pt-3 text-sm font-semibold lg:flex">
             <Link to="/shop">Shop</Link>
             <Link to="/#category">Categories</Link>
             <Link to="/#packages">Packages</Link>
@@ -92,7 +92,14 @@ export function StoreLayout() {
         )}
       </header>
       <Outlet />
-      <footer className="mt-12 bg-foreground text-background">
+      <nav aria-label="Mobile shopping navigation" className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-border bg-card px-2 py-2 text-[10px] font-medium shadow-sm md:hidden">
+        <Link to="/" className="flex flex-col items-center gap-1"><HomeIcon size={20} />Home</Link>
+        <Link to="/#category" className="flex flex-col items-center gap-1"><Grid2X2 size={20} />Categories</Link>
+        <Link to="/shop" className="flex flex-col items-center gap-1"><Search size={20} />Search</Link>
+        <Link to="/cart" className="flex flex-col items-center gap-1"><ShoppingBag size={20} />Cart</Link>
+        <Link to={user ? "/account" : "/login"} className="flex flex-col items-center gap-1"><UserRound size={20} />Account</Link>
+      </nav>
+      <footer className="mt-6 bg-foreground pb-16 text-background md:pb-0">
         <div className="mx-auto grid max-w-[1440px] gap-8 px-6 py-12 md:grid-cols-4">
           <div>
             <h2 className="font-display text-2xl font-bold">{settings.name}</h2>
