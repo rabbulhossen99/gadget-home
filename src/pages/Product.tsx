@@ -153,15 +153,7 @@ function ProductDetails({ product: p }: { product: ProductType }) {
             <p className="text-xs font-bold uppercase text-primary">
               {category?.name}
             </p>
-            <div className="mt-4 border-b pb-4 sm:mt-6 sm:pb-5">
-              <h2 className="font-display text-2xl font-bold sm:text-3xl">
-                Quantity / Package Options
-              </h2>
-              <p className="mt-1 text-xs text-muted-foreground sm:text-sm">
-                Choose your preferred package and save more with bigger quantities.
-              </p>
-            </div>
-            <h1 className="mt-3 text-center font-display text-xl font-semibold sm:mt-4 sm:text-left sm:text-2xl">
+            <h1 className="mt-2 text-left font-display text-xl font-semibold sm:text-2xl">
               {p.name}
             </h1>
             <p className="mt-2 text-xs leading-5 text-muted-foreground sm:mt-3 sm:text-sm sm:leading-6">
