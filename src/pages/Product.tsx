@@ -32,10 +32,6 @@ export function Product() {
 function ProductDetails({ product: p }: { product: ProductType }) {
   const { catalog, add, notice, user } = useStore(),
     navigate = useNavigate(),
-    [selected, setSelected] = useState(
-      p.variants.find((variant) => /^1\s*pc$/i.test(variant.name.trim()))?.id ||
-        p.variants[0]?.id,
-    ),
     [photo, setPhoto] = useState(0),
     [zoom, setZoom] = useState(false),
     [position, setPosition] = useState({ x: 50, y: 50 }),
@@ -46,7 +42,7 @@ function ProductDetails({ product: p }: { product: ProductType }) {
   const { data: reviews, reload } = useResource<
     { id: string; name: string; rating: number; comment: string }[]
   >("/products/" + p.id + "/reviews");
-  const v = p.variants.find((v) => v.id === selected),
+  const v = p.variants[0],
     category = catalog.categories.find((c) => c.id === p.categoryId),
     { active } = useTracking();
   useEffect(() => {
@@ -177,35 +173,6 @@ function ProductDetails({ product: p }: { product: ProductType }) {
                 </span>
               )}
             </div>
-            <fieldset>
-              <legend className="mb-2 text-[11px] font-bold uppercase text-muted-foreground sm:mb-3 sm:text-xs">
-                Select package
-              </legend>
-              <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
-                {p.variants.map((pack) => (
-                  <button
-                    key={pack.id}
-                    aria-pressed={selected === pack.id}
-                    onClick={() => {
-                      setSelected(pack.id);
-                      setQuantity(1);
-                    }}
-                    className={cn(
-                      "min-h-16 rounded-2xl border-2 bg-card p-2 text-left shadow-sm transition sm:min-h-20 sm:p-3",
-                      selected === pack.id
-                        ? "border-primary bg-secondary"
-                        : "border-transparent ring-1 ring-border",
-                    )}
-                  >
-                    <span className="block text-xs font-bold sm:text-sm">{pack.name}</span>
-                    <span className="mt-1 block text-[11px] text-muted-foreground sm:text-xs">
-                      {money(pack.price)} ·{" "}
-                      {pack.stock ? "Available" : "Out of stock"}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </fieldset>
             <div className="mt-4 grid grid-cols-[auto_1fr] gap-2 sm:mt-6 sm:gap-3">
               <div className="flex items-center rounded-lg border bg-card p-1">
                 <Button
